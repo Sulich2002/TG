@@ -146,11 +146,26 @@ export function runningPace(data) {
   const seconds=Math.round(data.minutes*60/data.distance);
   return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} мин/км`;
 }
+const firstLevelCosts=[100,200,350,500,700,900,1200,1500,1900,2300];
+export function levelCost(level){
+  if(level<=firstLevelCosts.length)return firstLevelCosts[Math.max(0,level-1)];
+  const n=level-firstLevelCosts.length,pairs=Math.floor(n/2),odd=n%2;
+  return 2300+pairs*1000+100*pairs*(pairs-1)+odd*(500+100*pairs);
+}
+export function xpBeforeLevel(level){
+  const completed=Math.max(0,level-1);
+  const prefix=firstLevelCosts.slice(0,completed).reduce((sum,xp)=>sum+xp,0);
+  if(completed<=firstLevelCosts.length)return prefix;
+  const n=completed-firstLevelCosts.length,pairs=Math.floor(n/2),odd=n%2;
+  return prefix+2300*n+250*n*(n+1)+100*(pairs*(pairs-1)*(4*pairs+1)/6+odd*pairs*pairs);
+}
 export function levelProgress(total) {
-  const xp=Math.max(0,Number.isFinite(total)?total:0);
-  const completed=Math.floor((Math.sqrt(49+.32*xp)-7)/2);
-  const start=100*completed+25*completed*(completed-1)/2;
-  return {level:completed+1,current:roundXP(xp-start),required:100+completed*25,start};
+  const xp=Math.min(Number.MAX_SAFE_INTEGER,Math.max(0,Number.isFinite(total)?total:0));
+  let low=1,high=2;
+  while(xpBeforeLevel(high)<=xp)high*=2;
+  while(high-low>1){const middle=Math.floor((low+high)/2);if(xpBeforeLevel(middle)<=xp)low=middle;else high=middle;}
+  const start=xpBeforeLevel(low);
+  return {level:low,current:roundXP(xp-start),required:levelCost(low),start};
 }
 function normalizePlans(plans) {
   const seen=new Set();

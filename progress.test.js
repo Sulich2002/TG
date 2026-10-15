@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {tasks,normalize,migrate,totalXP,completed,complete,bonusDays,addWorkout,workoutData,personalRecords,workoutDescription,workoutXP,levelProgress,runningPace,addPlan,completePlan,removePlan,awardAchievements,achievements,activeStreak,weeklySummary,shiftDay,weekStart} from './progress.js';
+import {tasks,normalize,migrate,totalXP,completed,complete,bonusDays,addWorkout,workoutData,personalRecords,workoutDescription,workoutXP,levelProgress,levelCost,xpBeforeLevel,runningPace,addPlan,completePlan,removePlan,awardAchievements,achievements,activeStreak,weeklySummary,shiftDay,weekStart} from './progress.js';
 const today='2026-10-15';
 test('daily tasks award once and completing the full set grants one bonus',()=>{
  let state=normalize(null);
@@ -73,10 +73,19 @@ test('10, 100 and 1000 pushups award 1, 10 and 100 XP; small amounts are retaine
  assert.equal(workoutXP(workoutData({type:'football',minutes:120},today)),120);
  assert.equal(workoutXP(workoutData({type:'run',minutes:30},today)),15);
 });
-test('level costs increase: 100,125,150,175 with correct boundaries',()=>{
- for(const [total,level,current,required] of [[0,1,0,100],[99.9,1,99.9,100],[100,2,0,125],[224.9,2,124.9,125],[225,3,0,150],[375,4,0,175],[550,5,0,200]]){
+test('each level has a separate growing price and boundaries use cumulative XP',()=>{
+ for(const [total,level,current,required] of [[0,1,0,100],[99.9,1,99.9,100],[100,2,0,200],[299.9,2,199.9,200],[300,3,0,350],[650,4,0,500],[1150,5,0,700],[1850,6,0,900],[2750,7,0,1200]]){
   const value=levelProgress(total);assert.deepEqual({level:value.level,current:value.current,required:value.required},{level,current,required});
  }
+ assert.deepEqual(Array.from({length:14},(_,i)=>levelCost(i+1)),[100,200,350,500,700,900,1200,1500,1900,2300,2800,3300,3900,4500]);
+});
+test('closed-form thresholds match sequential prices through later levels',()=>{
+ let expected=0;for(let level=1;level<=100;level++){
+  assert.equal(xpBeforeLevel(level),expected);assert.equal(levelProgress(expected).level,level);
+  if(expected>0)assert.equal(levelProgress(expected-.1).level,level-1);
+  expected+=levelCost(level);
+ }
+ assert.equal(xpBeforeLevel(20),57850);
 });
 test('pace uses both inputs and carries seconds into minutes',()=>{
  assert.equal(runningPace({distance:3,minutes:18}),'6:00 мин/км');
