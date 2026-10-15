@@ -73,19 +73,20 @@ test('10, 100 and 1000 pushups award 1, 10 and 100 XP; small amounts are retaine
  assert.equal(workoutXP(workoutData({type:'football',minutes:120},today)),120);
  assert.equal(workoutXP(workoutData({type:'run',minutes:30},today)),15);
 });
-test('each level has a separate growing price and boundaries use cumulative XP',()=>{
- for(const [total,level,current,required] of [[0,1,0,100],[99.9,1,99.9,100],[100,2,0,200],[299.9,2,199.9,200],[300,3,0,350],[650,4,0,500],[1150,5,0,700],[1850,6,0,900],[2750,7,0,1200]]){
+test('level prices increase in pairs: 100,100,200,200,300,300',()=>{
+ for(const [total,level,current,required] of [[0,1,0,100],[99.9,1,99.9,100],[100,2,0,100],[199.9,2,99.9,100],[200,3,0,200],[399.9,3,199.9,200],[400,4,0,200],[600,5,0,300],[900,6,0,300],[1200,7,0,400]]){
   const value=levelProgress(total);assert.deepEqual({level:value.level,current:value.current,required:value.required},{level,current,required});
  }
- assert.deepEqual(Array.from({length:14},(_,i)=>levelCost(i+1)),[100,200,350,500,700,900,1200,1500,1900,2300,2800,3300,3900,4500]);
+ assert.deepEqual(Array.from({length:10},(_,i)=>levelCost(i+1)),[100,100,200,200,300,300,400,400,500,500]);
 });
-test('closed-form thresholds match sequential prices through later levels',()=>{
+test('cumulative XP sums all separate prices and is retained when levels change',()=>{
  let expected=0;for(let level=1;level<=100;level++){
   assert.equal(xpBeforeLevel(level),expected);assert.equal(levelProgress(expected).level,level);
   if(expected>0)assert.equal(levelProgress(expected-.1).level,level-1);
   expected+=levelCost(level);
  }
- assert.equal(xpBeforeLevel(20),57850);
+ assert.equal(xpBeforeLevel(20),10000);
+ assert.equal(totalXP({base:650,events:[]}),650);assert.deepEqual(levelProgress(650),{level:5,current:50,required:300,start:600});
 });
 test('pace uses both inputs and carries seconds into minutes',()=>{
  assert.equal(runningPace({distance:3,minutes:18}),'6:00 мин/км');

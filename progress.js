@@ -146,18 +146,12 @@ export function runningPace(data) {
   const seconds=Math.round(data.minutes*60/data.distance);
   return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} мин/км`;
 }
-const firstLevelCosts=[100,200,350,500,700,900,1200,1500,1900,2300];
 export function levelCost(level){
-  if(level<=firstLevelCosts.length)return firstLevelCosts[Math.max(0,level-1)];
-  const n=level-firstLevelCosts.length,pairs=Math.floor(n/2),odd=n%2;
-  return 2300+pairs*1000+100*pairs*(pairs-1)+odd*(500+100*pairs);
+  return 100*Math.ceil(Math.max(1,level)/2);
 }
 export function xpBeforeLevel(level){
-  const completed=Math.max(0,level-1);
-  const prefix=firstLevelCosts.slice(0,completed).reduce((sum,xp)=>sum+xp,0);
-  if(completed<=firstLevelCosts.length)return prefix;
-  const n=completed-firstLevelCosts.length,pairs=Math.floor(n/2),odd=n%2;
-  return prefix+2300*n+250*n*(n+1)+100*(pairs*(pairs-1)*(4*pairs+1)/6+odd*pairs*pairs);
+  const completed=Math.max(0,level-1),pairs=Math.floor(completed/2),odd=completed%2;
+  return 100*(pairs*(pairs+1)+odd*(pairs+1));
 }
 export function levelProgress(total) {
   const xp=Math.min(Number.MAX_SAFE_INTEGER,Math.max(0,Number.isFinite(total)?total:0));
