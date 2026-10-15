@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.js';
-import {bodyShape} from './avatar-shape.js';
+import {bodyShape} from './avatar-shape.js?v=0.3.0';
 export function createAvatar(container,initialLevel=1) {
   const renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,powerPreference:'low-power'});
   renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));renderer.setClearColor(0x000000,0);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.25;

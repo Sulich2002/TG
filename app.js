@@ -1,4 +1,4 @@
-import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes } from './progress.js';
+import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes } from './progress.js?v=0.3.0';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
 let state;
@@ -97,7 +97,7 @@ function renderPlans(){
 async function ensureAvatar(){
   if(avatar){avatar.setLevel(levelProgress(totalXP(state)).level);avatar.setActive(true);return;}
   if(avatarPromise)return;
-  avatarPromise=import('./avatar.js').then(({createAvatar})=>{avatar=createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level);avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D недоступна в этом браузере · упрощённый вид';$('avatar-viewport').dataset.unavailable='true';});
+  avatarPromise=import('./avatar.js?v=0.3.0').then(({createAvatar})=>{avatar=createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level);avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D недоступна в этом браузере · упрощённый вид';$('avatar-viewport').dataset.unavailable='true';});
 }
 $('rotate-left').addEventListener('click',()=>avatar?.rotate(-.5));$('rotate-right').addEventListener('click',()=>avatar?.rotate(.5));$('reset-avatar').addEventListener('click',()=>avatar?.reset());
 $('add-plan').addEventListener('click',()=>{$('plan-form').reset();$('plan-error').textContent='';$('plan-dialog').showModal();updateBack();});
