@@ -1,14 +1,14 @@
 export const tasks = [
-  { id:'warmup', title:'Размяться', description:'Немного движения в комфортном темпе', xp:10, icon:'sun' },
-  { id:'shower', title:'Принять душ', description:'Освежиться и начать день', xp:10, icon:'water' },
-  { id:'breakfast', title:'Позавтракать', description:'Выделить время на завтрак', xp:10, icon:'cup' },
-  { id:'reading', title:'Почитать', description:'Несколько страниц для себя', xp:20, icon:'book' }
+  { id:'warmup', title:'Размяться', description:'Немного движения в комфортном темпе', xp:5, icon:'sun' },
+  { id:'shower', title:'Принять душ', description:'Освежиться и начать день', xp:5, icon:'water' },
+  { id:'breakfast', title:'Позавтракать', description:'Выделить время на завтрак', xp:5, icon:'cup' },
+  { id:'reading', title:'Почитать', description:'Несколько страниц для себя', xp:10, icon:'book' }
 ];
 export const workoutTypes = { run:'Бег', football:'Футбол', home:'Домашняя тренировка', gym:'Зал' };
 export const exercises = { pushups:'Отжимания', pullups:'Подтягивания', squats:'Приседания' };
 export const muscleGroups = { back:'Спина', chest:'Грудь', legs:'Ноги', shoulders:'Плечи', arms:'Руки', full:'Всё тело' };
 const legacyRewards = {run:50,football:50,home:40,gym:60};
-export const planSizes = { small:{title:'Небольшое',xp:5}, medium:{title:'Обычное',xp:15}, large:{title:'Большое',xp:30} };
+export const planSizes = { small:{title:'Небольшое',xp:5}, medium:{title:'Обычное',xp:10}, large:{title:'Большое',xp:20} };
 const roundXP = value => Math.round(value*10)/10;
 export const formatXP = value => new Intl.NumberFormat('ru',{maximumFractionDigits:1}).format(value);
 export const dayBonus = 20;
@@ -65,13 +65,17 @@ export function normalize(value) {
     if (raw.kind === 'task') {
       const task = tasks.find(item=>item.id===raw.task);
       if (!task || raw.id !== `${raw.day}:${task.id}`) continue;
-      event = {id:raw.id,day:raw.day,kind:'task',task:task.id,xp:task.xp};
+      event = {id:raw.id,day:raw.day,kind:'task',task:task.id,xp:raw.rewardVersion===2?task.xp:task.id==='reading'?20:10,...(raw.rewardVersion===2?{rewardVersion:2}:{})};
     } else if (raw.kind === 'workout') {
       try { const data = workoutData(raw.data); if(data.day!==raw.day) continue; event={id:raw.id,day:raw.day,kind:'workout',data,xp:raw.xpRule==='volume-v1'?workoutXP(data):legacyRewards[data.type],...(raw.xpRule==='volume-v1'?{xpRule:'volume-v1'}:{})}; } catch {continue;}
     } else if(raw.kind==='plan') {
       const plan=normalizePlans([raw.plan])[0];
       if(!plan || raw.id!==`plan:${plan.id}`)continue;
-      event={id:raw.id,day:raw.day,kind:'plan',plan,xp:planSizes[plan.size].xp};
+      event={id:raw.id,day:raw.day,kind:'plan',plan,xp:raw.rewardVersion===2?planSizes[plan.size].xp:({small:5,medium:15,large:30})[plan.size],...(raw.rewardVersion===2?{rewardVersion:2}:{})};
+    } else if(raw.kind==='achievement') {
+      const item=achievementCatalog.find(item=>item.id===raw.achievement);
+      if(!item || raw.id!==`achievement:${item.id}`)continue;
+      event={id:raw.id,day:raw.day,kind:'achievement',achievement:item.id,xp:item.xp};
     } else continue;
     seen.add(event.id);
     events.push(event);
@@ -100,7 +104,7 @@ export function complete(value,id,day=dayKey()) {
   const state=normalize(value);
   const task=tasks.find(item=>item.id===id);
   if(!task || !validDay(day) || completed(state,day).includes(id)) return state;
-  return {...state,events:[...state.events,{id:`${day}:${id}`,day,kind:'task',task:id,xp:task.xp}]};
+  return {...state,events:[...state.events,{id:`${day}:${id}`,day,kind:'task',task:id,xp:task.xp,rewardVersion:2}]};
 }
 export function addWorkout(value,input,id,today=dayKey()) {
   const state=normalize(value);
@@ -165,10 +169,46 @@ export function addPlan(value,input,id,day=dayKey()) {
 export function completePlan(value,id,today=dayKey()) {
   const state=normalize(value),plan=state.plans.find(plan=>plan.id===id);
   if(!plan||plan.day>today||state.events.some(event=>event.id===`plan:${id}`))return state;
-  return {...state,events:[...state.events,{id:`plan:${id}`,day:today,kind:'plan',plan,xp:planSizes[plan.size].xp}]};
+  return {...state,events:[...state.events,{id:`plan:${id}`,day:today,kind:'plan',plan,xp:planSizes[plan.size].xp,rewardVersion:2}]};
 }
 export function removePlan(value,id) {
   const state=normalize(value);
   if(state.events.some(event=>event.id===`plan:${id}`))return state;
   return {...state,plans:state.plans.filter(plan=>plan.id!==id)};
+}
+
+export function shiftDay(day,offset){const date=new Date(day+'T12:00:00');date.setDate(date.getDate()+offset);return dayKey(date);}
+export function weekStart(day=dayKey()){const date=new Date(day+'T12:00:00');return shiftDay(day,-((date.getDay()+6)%7));}
+export function activeStreak(value,today=dayKey()){
+ const days=new Set(normalize(value).events.filter(event=>['task','workout','plan'].includes(event.kind)).map(event=>event.day));
+ let cursor=days.has(today)?today:shiftDay(today,-1),current=0;
+ while(days.has(cursor)){current++;cursor=shiftDay(cursor,-1);}
+ let longest=0,run=0,previous;
+ for(const day of [...days].sort()){run=previous&&shiftDay(previous,1)===day?run+1:1;longest=Math.max(longest,run);previous=day;}
+ return {current,longest,days:days.size};
+}
+export function weeklySummary(value,anchor=dayKey()){
+ const state=normalize(value),start=weekStart(anchor),days=Array.from({length:7},(_,index)=>shiftDay(start,index));
+ const events=state.events.filter(event=>days.includes(event.day)),workouts=events.filter(event=>event.kind==='workout');
+ const groups=Object.fromEntries(Object.keys(muscleGroups).map(group=>[group,0]));let volume=0;
+ for(const event of workouts)if(event.data.type==='gym')for(const entry of event.data.exercises){groups[entry.group]+=entry.sets;volume+=entry.weight*entry.sets*entry.reps;}
+ return {start,days:days.map(day=>({day,workouts:workouts.filter(event=>event.day===day).length})),workouts:workouts.length,kilometers:roundXP(workouts.filter(event=>event.data.type==='run').reduce((sum,event)=>sum+(event.data.distance||0),0)),minutes:roundXP(workouts.reduce((sum,event)=>sum+(event.data.minutes||0),0)),volume,groups};
+}
+export const achievementCatalog=[
+ {id:'first-workout',title:'Начало положено',description:'Записать первую тренировку',xp:15,icon:'activity',target:1},
+ {id:'full-day',title:'День для себя',description:'Выполнить весь базовый набор за день',xp:10,icon:'sun',target:1},
+ {id:'run-10',title:'Первые 10 километров',description:'Пробежать суммарно 10 км',xp:30,icon:'chart',target:10},
+ {id:'streak-10',title:'В своём ритме',description:'10 дней подряд отмечать дела или занятия',xp:50,icon:'flame',target:10},
+ {id:'gym-5',title:'Пять встреч с железом',description:'Записать 5 занятий в зале',xp:30,icon:'activity',target:5},
+ {id:'pushups-1000',title:'Тысяча повторений',description:'Накопить 1000 отжиманий',xp:50,icon:'person',target:1000}
+];
+export function achievements(value){
+ const state=normalize(value),records=personalRecords(state),workouts=state.events.filter(event=>event.kind==='workout');
+ const metrics={'first-workout':records.workouts,'full-day':bonusDays(state).length,'run-10':records.kilometers,'streak-10':activeStreak(state).longest,'gym-5':workouts.filter(event=>event.data.type==='gym').length,'pushups-1000':workouts.filter(event=>event.data.type==='home'&&event.data.exercise==='pushups').reduce((sum,event)=>sum+event.data.reps.reduce((sum,rep)=>sum+rep,0),0)};
+ return achievementCatalog.map(item=>({...item,current:metrics[item.id],unlocked:metrics[item.id]>=item.target,awarded:state.events.some(event=>event.id===`achievement:${item.id}`)}));
+}
+export function awardAchievements(value,today=dayKey()){
+ const state=normalize(value);
+ const earned=achievements(state).filter(item=>item.unlocked&&!item.awarded).map(item=>({id:`achievement:${item.id}`,day:today,kind:'achievement',achievement:item.id,xp:item.xp}));
+ return {...state,events:[...state.events,...earned]};
 }

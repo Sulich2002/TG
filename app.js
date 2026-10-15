@@ -1,4 +1,5 @@
-import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes } from './progress.js?v=0.3.0';
+import {normalizeProfile} from './profile.js?v=0.4.0';
+import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.4.0';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
 let state;
@@ -6,15 +7,18 @@ try {
   const saved=localStorage.getItem(storageKey);
   state=saved ? normalize(JSON.parse(saved)) : migrate(JSON.parse(localStorage.getItem('my-player-v1')));
 } catch {state=normalize(null);}
+let profile;try{profile=normalizeProfile(JSON.parse(localStorage.getItem('my-character-profile-v1')));}catch{profile=null;}
+let historyDay=dayKey(),calendarWeek=weekStart();
 let avatar,avatarPromise;
 let selectedPanel='today',historyFilter='all',renderedDay=dayKey(),toastTimeout,workoutType='run',workoutId;
 const icon=name=>`<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
 function element(tag,text,className) {const node=document.createElement(tag);if(text!=null)node.textContent=text;if(className)node.className=className;return node;}
 function notify(text) {$('toast').textContent=text;$('toast').classList.add('visible');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('toast').classList.remove('visible'),4000);}
 function persist(next,message) {
-  try {localStorage.setItem(storageKey,JSON.stringify(next));}
+  const settled=awardAchievements(next),extra=totalXP(settled)-totalXP(next);
+  try {localStorage.setItem(storageKey,JSON.stringify(settled));}
   catch {notify('Не удалось сохранить. Разреши хранение данных и попробуй ещё раз.');return false;}
-  state=next;render();if(message)notify(message);return true;
+  state=settled;render();if(message)notify(message+(extra?` · Достижение +${formatXP(extra)} XP`:''));return true;
 }
 function updateBack() {
   const back=window.Telegram?.WebApp?.BackButton;
@@ -31,8 +35,9 @@ function navigate(panel) {
   updateBack();window.scrollTo({top:0,behavior:'instant'});
 }
 function renderHistory() {
+  renderCalendar();
   const events=[...state.events,...bonusDays(state).map(day=>({id:day+':bonus',day,kind:'bonus',xp:dayBonus}))].reverse().sort((a,b)=>b.day.localeCompare(a.day));
-  const filtered=events.filter(event=>historyFilter==='all'||(historyFilter==='task'?event.kind!=='workout':event.kind==='workout'));
+  const filtered=events.filter(event=>(historyDay===null||event.day===historyDay)&&(historyFilter==='all'||(historyFilter==='task'?['task','plan','bonus'].includes(event.kind):event.kind==='workout')));
   const container=$('history-list');container.replaceChildren();
   if(!filtered.length) {
     const empty=element('div',null,'empty-state');empty.innerHTML=icon('history');empty.append(element('h2',historyFilter==='workout'?'Пока без тренировок':'Твоя история впереди'),element('p','Отметь дело или запиши занятие. Здесь появятся дата, результат и полученный опыт.'));container.append(empty);return;
@@ -40,11 +45,11 @@ function renderHistory() {
   let previous;
   for(const event of filtered) {
     if(event.day!==previous){container.append(element('h2',new Intl.DateTimeFormat('ru',{day:'numeric',month:'long',year:'numeric'}).format(new Date(event.day+'T12:00:00')),'history-date'));previous=event.day;}
-    const task=tasks.find(task=>task.id===event.task);
+    const task=tasks.find(task=>task.id===event.task),badge=achievementCatalog.find(item=>item.id===event.achievement);
     const row=element('article',null,'history-item'),symbol=element('span',null,'history-icon');
-    symbol.innerHTML=icon(event.kind==='workout'?'activity':event.kind==='bonus'?'sun':(task?.icon||'check'));
-    const content=element('div');content.append(element('b',event.kind==='workout'?workoutTypes[event.data.type]:event.kind==='bonus'?'Все дела на сегодня выполнены':event.kind==='plan'?event.plan.title:task.title));
-    content.append(element('small',event.kind==='workout'?workoutDescription(event.data):event.kind==='bonus'?'Бонус за полный набор':event.kind==='plan'?'Свой план · '+planSizes[event.plan.size].title:'Базовое дело: разминка, душ, завтрак или чтение'));
+    symbol.innerHTML=icon(event.kind==='workout'?'activity':event.kind==='bonus'?'sun':event.kind==='achievement'?'award':(task?.icon||'check'));
+    const content=element('div');content.append(element('b',event.kind==='workout'?workoutTypes[event.data.type]:event.kind==='bonus'?'Все дела на сегодня выполнены':event.kind==='plan'?event.plan.title:event.kind==='achievement'?badge.title:task.title));
+    content.append(element('small',event.kind==='workout'?workoutDescription(event.data):event.kind==='bonus'?'Бонус за полный набор':event.kind==='plan'?'Свой план · '+planSizes[event.plan.size].title:event.kind==='achievement'?'Достижение · '+badge.description:'Базовое дело: разминка, душ, завтрак или чтение'));
     row.append(symbol,content,element('strong',`+${formatXP(event.xp)} XP`));container.append(row);
   }
 }
@@ -66,30 +71,74 @@ function render() {
   state=normalize(state);renderedDay=dayKey();
   const total=totalXP(state),{level,current:xp,required}=levelProgress(total),done=completed(state);
   $('date').textContent=new Intl.DateTimeFormat('ru',{day:'numeric',month:'long',weekday:'long'}).format(new Date()).toUpperCase();
-  $('summary-level').textContent=`Уровень ${level} · ${formatXP(xp)} / ${required} XP`;$('level').textContent=`Уровень ${level}`;$('xp-text').textContent=`${formatXP(xp)} / ${required} XP`;$('xp-bar').style.width=`${xp/required*100}%`;$('total-xp').textContent=formatXP(total);avatar?.setLevel(level);$('body-stage').textContent=level<5?'НАЧАЛО ПУТИ':level<10?'ВХОДИШЬ В РИТМ':level<20?'НАБИРАЕШЬ ФОРМУ':'НОВЫЙ ОБЛИК';
+  $('summary-level').textContent=`Уровень ${level} · ${formatXP(xp)} / ${required} XP`;$('level').textContent=`Уровень ${level} · ${level<8?'Новичок':level<20?'В ритме':'Уверенный шаг'}`;$('xp-text').textContent=`${formatXP(xp)} / ${required} XP`;$('xp-bar').style.width=`${xp/required*100}%`;$('total-xp').textContent=formatXP(total);avatar?.setLevel(level);$('body-stage').textContent=level<8?'НАЧАЛО ПУТИ':level<20?'ВХОДИШЬ В РИТМ':level<40?'НАБИРАЕШЬ ФОРМУ':'УВЕРЕННЫЙ РИТМ';
   $('daily-count').textContent=`${done.length} / ${tasks.length}`;
   $('bonus-card').classList.toggle('earned',done.length===tasks.length);
   $('bonus-title').textContent=done.length===tasks.length?'Бонус получен. Ты справился!':'Бонус за весь набор';
   $('bonus-note').textContent=done.length===tasks.length?'Завтра будет новый день. Опыт останется.':'Выполни четыре дела в течение дня';
   $('daily-tasks').replaceChildren(...tasks.map(task=>{
     const isDone=done.includes(task.id),button=element('button',null,`daily-task${isDone?' done':''}`);
+    const shownXP=state.events.find(event=>event.kind==='task'&&event.task===task.id&&event.day===dayKey())?.xp??task.xp;
     button.disabled=isDone;button.setAttribute('aria-label',`${isDone?'Выполнено':'Выполнить'}: ${task.title}`);
-    button.innerHTML=`<span class="task-symbol">${icon(task.icon)}</span><span class="daily-label"><b>${task.title}</b><small>${task.description}</small></span><span class="task-end"><b>+${task.xp} XP</b><span class="task-check">${isDone?icon('check'):''}</span></span>`;
+    button.innerHTML=`<span class="task-symbol">${icon(task.icon)}</span><span class="daily-label"><b>${task.title}</b><small>${task.description}</small></span><span class="task-end"><b>+${shownXP} XP</b><span class="task-check">${isDone?icon('check'):''}</span></span>`;
     button.addEventListener('click',()=>{
       const next=complete(state,task.id),gain=totalXP(next)-totalXP(state);
       if(persist(next,`Дело сделано! +${formatXP(gain)} XP${gain>task.xp?' — с бонусом за день':''}`)) window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
     });return button;
-  }));renderPlans();renderHistory();renderRecords();
+  }));renderPlans();renderHistory();renderRecords();renderProgress();renderProfile();
+}
+function renderProfile(){
+  document.querySelector('main').hidden=!profile;document.querySelector('.bottom-nav').hidden=!profile;
+  if(!profile)return;
+  $('character-name').textContent=profile.name;
+  $('home-greeting').textContent=`Твой день, ${profile.name}.`;
+  $('metric-weight').textContent=`${profile.weight} кг`;$('metric-height').textContent=`${profile.height} см`;$('metric-age').textContent=`${profile.age}`;
+  const streak=activeStreak(state);$('home-streak').innerHTML=icon('flame');$('home-streak').append(element('b',streak.current),element('span','дней'));
+}
+function editProfile(){
+  $('profile-form').reset();$('profile-error').textContent='';
+  $('close-profile').hidden=!profile;$('profile-submit').textContent=profile?'Сохранить изменения':'Создать и начать';
+  if(profile){$('profile-name').value=profile.name;$('profile-age').value=profile.age;$('profile-height').value=profile.height;$('profile-weight').value=profile.weight;document.querySelector(`input[name=sex][value=${profile.sex}]`).checked=true;}
+  $('profile-dialog').showModal();updateBack();
+}
+$('profile-form').addEventListener('submit',async event=>{
+  event.preventDefault();const next=normalizeProfile(Object.fromEntries(new FormData(event.currentTarget)));
+  if(!next){$('profile-error').textContent='Проверь имя, возраст, рост и вес.';return;}
+  try{localStorage.setItem('my-character-profile-v1',JSON.stringify(next));}catch{$('profile-error').textContent='Не удалось сохранить. Разреши хранение данных на устройстве.';return;}
+  profile=next;$('profile-dialog').close();render();persist(state);if(avatar)try{await avatar.setProfile(profile);}catch{notify('Профиль сохранён. Модель загрузится при следующем открытии.');}navigate('character');
+});
+$('edit-profile').addEventListener('click',editProfile);$('close-profile').addEventListener('click',()=>{if(profile)$('profile-dialog').close();});
+$('profile-dialog').addEventListener('cancel',event=>{if(!profile)event.preventDefault();});$('profile-dialog').addEventListener('close',updateBack);
+function renderCalendar(){
+  const days=Array.from({length:7},(_,index)=>shiftDay(calendarWeek,index));
+  $('calendar-month').textContent=new Intl.DateTimeFormat('ru',{day:'numeric',month:'short',year:'numeric'}).formatRange(new Date(calendarWeek+'T12:00:00'),new Date(shiftDay(calendarWeek,6)+'T12:00:00'));
+  $('calendar-next').disabled=calendarWeek>=weekStart();$('history-date').max=dayKey();$('history-date').value=historyDay||'';
+  $('calendar-all').classList.toggle('active',historyDay===null);
+  $('calendar-days').replaceChildren(...days.map(day=>{
+    const date=new Date(day+'T12:00:00'),button=element('button',null,'calendar-day');button.disabled=day>dayKey();button.classList.toggle('selected',historyDay===day);button.classList.toggle('today',day===dayKey());button.setAttribute('aria-pressed',historyDay===day);button.setAttribute('aria-label',`История за ${new Intl.DateTimeFormat('ru',{day:'numeric',month:'long'}).format(date)}`);
+    button.append(element('small',new Intl.DateTimeFormat('ru',{weekday:'short'}).format(date)),element('b',date.getDate()),element('i',null,state.events.some(event=>event.day===day)?'has-events':''));button.addEventListener('click',()=>{historyDay=day;renderHistory();});return button;
+  }));
+}
+$('calendar-prev').addEventListener('click',()=>{calendarWeek=shiftDay(calendarWeek,-7);renderCalendar();});$('calendar-next').addEventListener('click',()=>{calendarWeek=shiftDay(calendarWeek,7);renderCalendar();});$('calendar-all').addEventListener('click',()=>{historyDay=null;renderHistory();});$('history-date').addEventListener('change',()=>{if($('history-date').value){historyDay=$('history-date').value;calendarWeek=weekStart(historyDay);renderHistory();}});
+function renderProgress(){
+  const summary=weeklySummary(state),weekday=new Intl.DateTimeFormat('ru',{weekday:'short'}),fmt=new Intl.NumberFormat('ru',{maximumFractionDigits:1});
+  $('week-range').textContent=`${new Date(summary.start+'T12:00:00').getDate()}–${new Date(shiftDay(summary.start,6)+'T12:00:00').getDate()}`;
+  const max=Math.max(1,...summary.days.map(day=>day.workouts));
+  $('week-bars').replaceChildren(...summary.days.map(day=>{const bar=element('div',null,'week-bar');bar.classList.toggle('is-today',day.day===dayKey());bar.setAttribute('aria-label',`${day.day}: ${day.workouts} занятий`);const track=element('div',null,'bar-track'),fill=element('i');fill.style.height=`${day.workouts/max*100}%`;track.append(fill);bar.append(element('b',day.workouts),track,element('small',weekday.format(new Date(day.day+'T12:00:00'))));return bar;}));
+  $('week-km').textContent=fmt.format(summary.kilometers);$('week-minutes').textContent=fmt.format(summary.minutes);$('week-volume').textContent=fmt.format(summary.volume);
+  const largest=Math.max(1,...Object.values(summary.groups));$('muscle-bars').replaceChildren(...Object.entries(summary.groups).filter(([,sets])=>sets>0).map(([group,sets])=>{const row=element('div',null,'muscle-row'),label=element('div');label.append(element('span',muscleGroups[group]),element('b',`${sets} подх.`));const track=element('div',null,'muscle-track'),fill=element('i');fill.style.width=`${sets/largest*100}%`;track.append(fill);row.append(label,track);return row;}));
+  const badges=achievements(state);$('achievement-count').textContent=`${badges.filter(item=>item.awarded).length} / ${badges.length}`;
+  $('achievements').replaceChildren(...badges.map(item=>{const card=element('article',null,`achievement${item.awarded?' unlocked':''}`),symbol=element('span',null,'badge-icon');symbol.innerHTML=icon(item.icon);const text=element('div');text.append(element('b',item.title),element('small',item.description),element('em',item.awarded?'Получено':`${fmt.format(Math.min(item.current,item.target))} / ${item.target}`));card.append(symbol,text,element('strong',`+${item.xp} XP`));return card;}));
 }
 function renderPlans(){
   const list=$('plans-list'),plans=state.plans.filter(plan=>plan.day===dayKey());list.replaceChildren();
   if(!plans.length){list.append(element('p','Добавь своё первое дело. Например, пройти урок или сходить на работу.','plans-empty'));return;}
   for(const plan of plans){
-    const done=state.events.some(event=>event.id===`plan:${plan.id}`),row=element('div',null,'plan-row'),button=element('button',null,`daily-task${done?' done':''}`);
+    const earned=state.events.find(event=>event.id===`plan:${plan.id}`),done=Boolean(earned),row=element('div',null,'plan-row'),button=element('button',null,`daily-task${done?' done':''}`);
     button.disabled=done;button.setAttribute('aria-label',`${done?'Выполнено':'Выполнить план'}: ${plan.title}`);
     const symbol=element('span',null,'task-symbol');symbol.innerHTML=icon('check');
     const label=element('span',null,'daily-label');label.append(element('b',plan.title),element('small',planSizes[plan.size].title));
-    const end=element('span',null,'task-end');end.append(element('b',`+${planSizes[plan.size].xp} XP`));const check=element('span',null,'task-check');if(done)check.innerHTML=icon('check');end.append(check);button.append(symbol,label,end);
+    const end=element('span',null,'task-end');end.append(element('b',`+${earned?.xp??planSizes[plan.size].xp} XP`));const check=element('span',null,'task-check');if(done)check.innerHTML=icon('check');end.append(check);button.append(symbol,label,end);
     button.addEventListener('click',()=>persist(completePlan(state,plan.id),`План выполнен! +${planSizes[plan.size].xp} XP`));row.append(button);
     if(!done){const remove=element('button','×','plan-remove');remove.setAttribute('aria-label',`Удалить план: ${plan.title}`);remove.addEventListener('click',()=>persist(removePlan(state,plan.id),'План удалён'));row.append(remove);}list.append(row);
   }
@@ -97,9 +146,8 @@ function renderPlans(){
 async function ensureAvatar(){
   if(avatar){avatar.setLevel(levelProgress(totalXP(state)).level);avatar.setActive(true);return;}
   if(avatarPromise)return;
-  avatarPromise=import('./avatar.js?v=0.3.0').then(({createAvatar})=>{avatar=createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level);avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D недоступна в этом браузере · упрощённый вид';$('avatar-viewport').dataset.unavailable='true';});
+  avatarPromise=import('./avatar.js?v=0.4.0').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
 }
-$('rotate-left').addEventListener('click',()=>avatar?.rotate(-.5));$('rotate-right').addEventListener('click',()=>avatar?.rotate(.5));$('reset-avatar').addEventListener('click',()=>avatar?.reset());
 $('add-plan').addEventListener('click',()=>{$('plan-form').reset();$('plan-error').textContent='';$('plan-dialog').showModal();updateBack();});
 $('close-plan').addEventListener('click',()=>$('plan-dialog').close());$('plan-dialog').addEventListener('close',updateBack);
 $('plan-form').addEventListener('submit',event=>{event.preventDefault();try{const next=addPlan(state,Object.fromEntries(new FormData(event.currentTarget)),crypto.randomUUID());if(persist(next,'План добавлен'))$('plan-dialog').close();}catch(error){$('plan-error').textContent=error.message;}});
@@ -151,7 +199,7 @@ $('workout-form').addEventListener('submit',event=>{
   try {
     const input=readWorkout();
     const next=addWorkout(state,input,workoutId),gain=totalXP(next)-totalXP(state);$('save-workout').disabled=true;
-    if(persist(next,`Тренировка в истории. +${formatXP(gain)} XP`)) {$('workout-dialog').close();navigate('history');window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');}else $('save-workout').disabled=false;
+    if(persist(next,`Тренировка в истории. +${formatXP(gain)} XP`)) {historyDay=input.day;calendarWeek=weekStart(historyDay);renderHistory();$('workout-dialog').close();navigate('history');window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');}else $('save-workout').disabled=false;
   } catch(error){$('form-error').textContent=error.message;$('save-workout').disabled=false;}
 });
 $('close-dialog').addEventListener('click',()=>$('workout-dialog').close());$('workout-dialog').addEventListener('close',updateBack);
@@ -163,7 +211,7 @@ for(const button of document.querySelectorAll('[data-type]'))button.addEventList
 for(const button of document.querySelectorAll('[data-filter]'))button.addEventListener('click',()=>{
   historyFilter=button.dataset.filter;for(const item of document.querySelectorAll('[data-filter]')){const active=item===button;item.classList.toggle('active',active);item.setAttribute('aria-pressed',active);}renderHistory();
 });
-function refreshDay(){if(renderedDay!==dayKey())render();}
+function refreshDay(){if(renderedDay!==dayKey()){if(historyDay===renderedDay){historyDay=dayKey();calendarWeek=weekStart();}render();}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshDay();});setInterval(refreshDay,30000);
 let telegramInitialized=false;
 function initializeTelegram(){
@@ -171,6 +219,6 @@ function initializeTelegram(){
   if(app.isVersionAtLeast?.('6.1')){app.setHeaderColor('#171b21');app.setBackgroundColor('#171b21');}
   if(app.isVersionAtLeast?.('7.10'))app.setBottomBarColor('#1a1e26');
   function applyInsets(){const top=(app.safeAreaInset?.top||0)+(app.contentSafeAreaInset?.top||0),bottom=Math.max(app.safeAreaInset?.bottom||0,app.contentSafeAreaInset?.bottom||0);document.documentElement.style.setProperty('--safe-top',`${top}px`);document.documentElement.style.setProperty('--safe-bottom',`max(env(safe-area-inset-bottom, 0px), ${bottom}px)`);}
-  applyInsets();app.onEvent?.('safeAreaChanged',applyInsets);app.onEvent?.('contentSafeAreaChanged',applyInsets);app.BackButton?.onClick(()=>{document.querySelector('dialog[open]')?document.querySelector('dialog[open]').close():navigate('today');});updateBack();
+  applyInsets();app.onEvent?.('safeAreaChanged',applyInsets);app.onEvent?.('contentSafeAreaChanged',applyInsets);app.BackButton?.onClick(()=>{document.querySelector('dialog[open]')?(profile?document.querySelector('dialog[open]').close():null):navigate('today');});updateBack();
 }
-document.querySelector('script[src*="telegram-web-app"]').addEventListener('load',initializeTelegram);initializeTelegram();render();
+document.querySelector('script[src*="telegram-web-app"]').addEventListener('load',initializeTelegram);initializeTelegram();render();if(!profile)editProfile();else persist(state);
