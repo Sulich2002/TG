@@ -1,5 +1,6 @@
-import {garminURL,garminRequest,garminHealth} from './garmin.js?v=0.6.0';
-import {garminCandidates,importGarmin,dayKey,workoutDescription,workoutXP,formatXP} from './progress.js?v=0.6.0';
+import {setupHealthAnalysis} from './health-analysis-ui.js?v=0.7.0';
+import {garminURL,garminRequest,garminHealth} from './garmin.js?v=0.7.0';
+import {garminCandidates,importGarmin,dayKey,workoutDescription,workoutXP,formatXP} from './progress.js?v=0.7.0';
 const $=id=>document.getElementById(id),storageKey='my-character-garmin-v1';
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 
@@ -17,18 +18,21 @@ export function appendGarminDetails(container,source){
   container.append(details);
 }
 
-export function setupGarmin({getState,persist,notify,getProfile,onImport,onDialog}){
+export function setupGarmin({getState,persist,notify,getProfile,onImport,onDialog,onNavigate}){
   let settings=null,busy=false,generation=0,preview=[],payload=[],stopped=false,health=[],healthDay;
   try{const saved=JSON.parse(localStorage.getItem(storageKey));if(saved&&typeof saved.token==='string'&&/^[A-Za-z0-9_-]{20,128}$/.test(saved.token)){settings={url:garminURL(saved.url),token:saved.token,knownIds:Array.isArray(saved.knownIds)?saved.knownIds.filter(id=>typeof id==='string').slice(-5000):[],initialReviewed:saved.initialReviewed===true,automatic:saved.automatic===true,connectedDay:/^\d{4}-\d{2}-\d{2}$/.test(saved.connectedDay)?saved.connectedDay:dayKey()};}}catch{}
   try{const saved=JSON.parse(localStorage.getItem('my-character-garmin-health-v1'));if(settings&&saved?.url===settings.url)health=(Array.isArray(saved.rows)?saved.rows:[]).slice(0,7).map(garminHealth).filter(Boolean);}catch{}
+  const analysis=setupHealthAnalysis({onNavigate});
+  $('garmin-analysis-open').addEventListener('click',()=>analysis.open('sleep',healthDay));
   function renderHealth(){
+    analysis.update(health,Boolean(settings));
     $('garmin-health').hidden=!settings||!health.length;if(!settings||!health.length)return;
     if(!health.some(item=>item.day===healthDay))healthDay=health[0].day;
     const current=health.find(item=>item.day===healthDay),fmt=new Intl.NumberFormat('ru',{maximumFractionDigits:0});
     $('garmin-health-day').replaceChildren(...health.map(item=>{const option=node('option',new Intl.DateTimeFormat('ru',{day:'numeric',month:'short'}).format(new Date(item.day+'T12:00:00')));option.value=item.day;return option;}));$('garmin-health-day').value=healthDay;
     const duration=seconds=>{if(seconds===null)return '—';const minutes=Math.round(seconds/60);return minutes>=60?`${Math.floor(minutes/60)} ч ${minutes%60} мин`:`${minutes} мин`;};
-    const metric=(label,value,unit)=>{const tile=node('div');tile.append(node('small',label),node('b',value===null?'—':typeof value==='string'?value:fmt.format(value)),node('span',unit));return tile;};
-    $('garmin-health-metrics').replaceChildren(metric('Сон',duration(current.sleepSeconds),'ночь к выбранной дате'),metric('Пульс в покое',current.restingHeartRate,'уд/мин'),metric('Шаги',current.steps,'за выбранный день'),metric(current.bodyBattery!==null?'Body Battery':'Пик Body Battery',current.bodyBattery??current.bodyBatteryHighest,'по шкале Garmin / 100'),metric('Средний стресс',current.averageStress,'по шкале Garmin / 100'),metric('Ночной HRV',current.hrvNightAverage,'мс'));
+    const metric=(key,label,value,unit)=>{const tile=node('button');tile.type='button';tile.setAttribute('aria-label',label+' — открыть график');tile.addEventListener('click',()=>analysis.open(key,healthDay));tile.append(node('small',label),node('b',value===null?'—':typeof value==='string'?value:fmt.format(value)),node('span',unit));return tile;};
+    $('garmin-health-metrics').replaceChildren(metric('sleep','Сон',duration(current.sleepSeconds),'ночь к выбранной дате'),metric('pulse','Пульс в покое',current.restingHeartRate,'уд/мин'),metric('steps','Шаги',current.steps,'за выбранный день'),metric('battery',current.bodyBattery!==null?'Body Battery':'Пик Body Battery',current.bodyBattery??current.bodyBatteryHighest,'по шкале Garmin / 100'),metric('stress','Средний стресс',current.averageStress,'по шкале Garmin / 100'),metric('hrv','Ночной HRV',current.hrvNightAverage,'мс'));
     $('garmin-sleep-stages').replaceChildren(...Object.entries({deep:'Глубокий',light:'Лёгкий',rem:'REM',awake:'Бодрствование'}).map(([key,label])=>node('p',`${label}: ${duration(current.sleepStages[key])}`)));
     if(current.sleepScore!==null)$('garmin-sleep-stages').prepend(node('p',`Оценка сна Garmin: ${fmt.format(current.sleepScore)} / 100`));
     $('garmin-sleep-details').hidden=current.sleepSeconds===null;
