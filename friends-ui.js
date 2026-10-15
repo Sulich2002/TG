@@ -29,6 +29,7 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  }
  function go(){onNavigate('progress');document.querySelector('[data-progress-tab=friends]').click();}
  function open(mode){
+  if(settings){notify('Ты уже вошёл в аккаунт. Для другого аккаунта сначала выйди.');return;}
   if(!getProfile()){notify('Сначала создай персонажа.');return;}
   go();$('friends-form').reset();$('friends-mode').value=mode;
   $('friends-url').value=pendingInvite?.url||settings?.url||initialGarmin()?.url||'';
@@ -120,7 +121,8 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  document.querySelector('[data-progress-tab=friends]').addEventListener('click',()=>{render();if(settings){if(!ready)initialize();else{flush();refresh();}}});
  setInterval(()=>{if(settings&&!document.hidden&&!$('progress-friends').hidden&&!$('panel-progress').hidden){flush();refresh();}},60000);
  render();if(settings)initialize();
- if(pendingInvite&&getProfile())setTimeout(()=>open('join'),0);
+ if(pendingInvite&&settings){pendingInvite=null;history.replaceState(null,'',location.pathname+location.search);setTimeout(go,0);}
+ else if(pendingInvite&&getProfile())setTimeout(()=>open('join'),0);
  if(sessionStorage.getItem('my-character-open-friends')){sessionStorage.removeItem('my-character-open-friends');go();}
  return {changed};
 }
