@@ -121,8 +121,8 @@ test('smaller task/plan rewards apply to new completions while old earned XP is 
 });
 test('achievements award once, including across reloads, without becoming activity days',()=>{
  const state=addWorkout(null,{type:'run',day:today,distance:10},'run',today);
- const earned=awardAchievements(state,today);assert.equal(totalXP(earned),145);
- assert.equal(achievements(earned).filter(item=>item.awarded).length,2);
+ const earned=awardAchievements(state,today);assert.equal(totalXP(earned),185);
+ assert.equal(achievements(earned).filter(item=>item.awarded).length,4);
  assert.deepEqual(awardAchievements(normalize(JSON.parse(JSON.stringify(earned))),today),earned);
  assert.equal(activeStreak(earned,today).days,1);
 });
@@ -136,4 +136,37 @@ test('ten active consecutive days unlock the streak even after a later gap',()=>
  let state=normalize(null);for(let i=0;i<10;i++)state=complete(state,'warmup',shiftDay(today,-i));
  assert.equal(activeStreak(state,today).current,10);assert.equal(activeStreak(state,shiftDay(today,3)).current,0);assert.equal(activeStreak(state,shiftDay(today,3)).longest,10);
  const earned=awardAchievements(state,today);assert.equal(achievements(earned).find(item=>item.id==='streak-10').awarded,true);
+});
+
+// Cumulative distances and a single long run must never share an achievement metric.
+test('cumulative running and single-race achievements are separate with exact race thresholds',()=>{
+ let state=normalize(null);for(let i=0;i<10;i++)state=addWorkout(state,{type:'run',day:today,distance:10},'ten-'+i,today);
+ const badges=()=>Object.fromEntries(achievements(state).map(item=>[item.id,item]));
+ assert.equal(badges()['run-100'].unlocked,true);assert.equal(badges()['run-half'].unlocked,false);assert.equal(badges()['run-marathon'].unlocked,false);
+ state=addWorkout(state,{type:'football',day:today,distance:50,minutes:120},'football',today);assert.equal(badges()['run-marathon'].unlocked,false);
+ state=addWorkout(state,{type:'run',day:today,distance:21.09},'short-half',today);assert.equal(badges()['run-half'].unlocked,false);
+ state=addWorkout(state,{type:'run',day:today,distance:21.0975},'half',today);assert.equal(badges()['run-half'].unlocked,true);
+ state=addWorkout(state,{type:'run',day:today,distance:42.19},'short-marathon',today);assert.equal(badges()['run-marathon'].unlocked,false);
+ state=addWorkout(state,{type:'run',day:today,distance:42.195},'marathon',today);assert.equal(badges()['run-marathon'].unlocked,true);
+ const earned=awardAchievements(state,today);assert.deepEqual(awardAchievements(JSON.parse(JSON.stringify(earned)),today),earned);
+ assert.equal(earned.events.filter(event=>event.achievement==='run-marathon').length,1);
+});
+test('strength awards recognize barbell movements without crediting dumbbells or inclined presses',()=>{
+ const entry=exercise=>({group:'chest',exercise,weight:100,sets:3,reps:8});
+ let state=addWorkout(null,{type:'gym',day:today,exercises:['Жим','Жим гантелей лёжа','Жим штанги на наклонной скамье','Жим ногами','Shoulder press'].map(entry)},'other',today);
+ const badge=id=>achievements(state).find(item=>item.id===id);
+ assert.equal(badge('bench-40').unlocked,false);assert.equal(badge('squat-60').unlocked,false);
+ state=addWorkout(state,{type:'gym',day:today,exercises:[{...entry('  Жим  штанги ЛЁЖА '),weight:60},{...entry('Присед со штангой'),group:'legs',weight:100}]},'barbell',today);
+ assert.equal(badge('bench-60').unlocked,true);assert.equal(badge('bench-80').unlocked,false);assert.equal(badge('squat-100').unlocked,true);
+ state=addWorkout(state,{type:'gym',day:today,exercises:[entry('Barbell bench press')]},'english',today);assert.equal(badge('bench-100').unlocked,true);
+});
+test('repetition achievements distinguish best approach from lifetime totals and retain historical rewards',()=>{
+ let state=addWorkout(null,{type:'home',day:today,exercise:'pushups',reps:[25,25]},'pushups',today);
+ state=addWorkout(state,{type:'home',day:today,exercise:'pullups',reps:[5,5,5]},'pullups',today);
+ assert.equal(achievements(state).find(item=>item.id==='pushups-50').unlocked,false);
+ assert.equal(achievements(state).find(item=>item.id==='pullups-10').unlocked,false);
+ state=addWorkout(state,{type:'home',day:today,exercise:'pushups',reps:[50]},'best',today);
+ const earned=awardAchievements(state,today);assert.equal(achievements(earned).find(item=>item.id==='pushups-50').awarded,true);
+ const historical=normalize({events:[{id:'achievement:run-10',kind:'achievement',achievement:'run-10',day:today,xp:30},{id:'achievement:pushups-1000',kind:'achievement',achievement:'pushups-1000',day:today,xp:50}]});
+ assert.equal(totalXP(historical),80);assert.deepEqual(awardAchievements(historical,today),historical);
 });

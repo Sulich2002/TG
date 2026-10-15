@@ -1,5 +1,5 @@
-import {normalizeProfile} from './profile.js?v=0.4.2';
-import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.4.2';
+import {normalizeProfile} from './profile.js?v=0.5.0';
+import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.5.0';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
 let state;
@@ -9,6 +9,7 @@ try {
 } catch {state=normalize(null);}
 let profile;try{profile=normalizeProfile(JSON.parse(localStorage.getItem('my-character-profile-v1')));}catch{profile=null;}
 let historyDay=dayKey(),calendarWeek=weekStart();
+let achievementFilter='all',achievementsExpanded=false;
 let avatar,avatarPromise;
 let selectedPanel='today',historyFilter='all',renderedDay=dayKey(),toastTimeout,workoutType='run',workoutId;
 const icon=name=>`<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -127,9 +128,28 @@ function renderProgress(){
   $('week-bars').replaceChildren(...summary.days.map(day=>{const bar=element('div',null,'week-bar');bar.classList.toggle('is-today',day.day===dayKey());bar.setAttribute('aria-label',`${day.day}: ${day.workouts} занятий`);const track=element('div',null,'bar-track'),fill=element('i');fill.style.height=`${day.workouts/max*100}%`;track.append(fill);bar.append(element('b',day.workouts),track,element('small',weekday.format(new Date(day.day+'T12:00:00'))));return bar;}));
   $('week-km').textContent=fmt.format(summary.kilometers);$('week-minutes').textContent=fmt.format(summary.minutes);$('week-volume').textContent=fmt.format(summary.volume);
   const largest=Math.max(1,...Object.values(summary.groups));$('muscle-bars').replaceChildren(...Object.entries(summary.groups).filter(([,sets])=>sets>0).map(([group,sets])=>{const row=element('div',null,'muscle-row'),label=element('div');label.append(element('span',muscleGroups[group]),element('b',`${sets} подх.`));const track=element('div',null,'muscle-track'),fill=element('i');fill.style.width=`${sets/largest*100}%`;track.append(fill);row.append(label,track);return row;}));
-  const badges=achievements(state);$('achievement-count').textContent=`${badges.filter(item=>item.awarded).length} / ${badges.length}`;
-  $('achievements').replaceChildren(...badges.map(item=>{const card=element('article',null,`achievement${item.awarded?' unlocked':''}`),symbol=element('span',null,'badge-icon');symbol.innerHTML=icon(item.icon);const text=element('div');text.append(element('b',item.title),element('small',item.description),element('em',item.awarded?'Получено':`${fmt.format(Math.min(item.current,item.target))} / ${item.target}`));card.append(symbol,text,element('strong',`+${item.xp} XP`));return card;}));
+  renderAchievements();
 }
+function renderAchievements(){
+  const badges=achievements(state),fmt=new Intl.NumberFormat('ru',{maximumFractionDigits:4});
+  $('achievement-count').textContent=`${badges.filter(item=>item.awarded).length} / ${badges.length}`;
+  const filtered=badges.filter(item=>achievementFilter==='all'||item.category===achievementFilter)
+    .sort((a,b)=>Number(b.awarded)-Number(a.awarded)||(b.current/b.target)-(a.current/a.target));
+  const visible=achievementsExpanded?filtered:filtered.slice(0,6);
+  $('achievements').replaceChildren(...visible.map(item=>{
+    const card=element('article',null,`achievement${item.awarded?' unlocked':''}`),symbol=element('span',null,'badge-icon');symbol.innerHTML=icon(item.icon);
+    const text=element('div');text.append(element('b',item.title),element('small',item.description),element('em',item.awarded?'Получено':`${fmt.format(Math.min(item.current,item.target))} / ${fmt.format(item.target)} ${item.unit}`));
+    const track=element('div',null,'achievement-track'),fill=element('i');fill.style.width=`${Math.min(100,item.current/item.target*100)}%`;track.append(fill);text.append(track);
+    card.append(symbol,text,element('strong',`+${item.xp} XP`));return card;
+  }));
+  for(const button of document.querySelectorAll('[data-achievement-filter]')){const active=button.dataset.achievementFilter===achievementFilter;button.classList.toggle('active',active);button.setAttribute('aria-pressed',active);}
+  $('show-achievements').hidden=filtered.length<=6;
+  $('show-achievements').textContent=achievementsExpanded?'Свернуть список':`Показать все (${filtered.length})`;
+  $('show-achievements').setAttribute('aria-expanded',achievementsExpanded);
+}
+for(const button of document.querySelectorAll('[data-achievement-filter]'))button.addEventListener('click',()=>{achievementFilter=button.dataset.achievementFilter;achievementsExpanded=false;renderAchievements();});
+$('show-achievements').addEventListener('click',()=>{achievementsExpanded=!achievementsExpanded;renderAchievements();});
+
 function renderPlans(){
   const list=$('plans-list'),plans=state.plans.filter(plan=>plan.day===dayKey());list.replaceChildren();
   if(!plans.length){list.append(element('p','Добавь своё первое дело. Например, пройти урок или сходить на работу.','plans-empty'));return;}
@@ -146,7 +166,7 @@ function renderPlans(){
 async function ensureAvatar(){
   if(avatar){avatar.setLevel(levelProgress(totalXP(state)).level);avatar.setActive(true);return;}
   if(avatarPromise)return;
-  avatarPromise=import('./avatar.js?v=0.4.2').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
+  avatarPromise=import('./avatar.js?v=0.5.0').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
 }
 $('add-plan').addEventListener('click',()=>{$('plan-form').reset();$('plan-error').textContent='';$('plan-dialog').showModal();updateBack();});
 $('close-plan').addEventListener('click',()=>$('plan-dialog').close());$('plan-dialog').addEventListener('close',updateBack);

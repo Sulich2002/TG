@@ -203,18 +203,55 @@ export function weeklySummary(value,anchor=dayKey()){
  for(const event of workouts)if(event.data.type==='gym')for(const entry of event.data.exercises){groups[entry.group]+=entry.sets;volume+=entry.weight*entry.sets*entry.reps;}
  return {start,days:days.map(day=>({day,workouts:workouts.filter(event=>event.day===day).length})),workouts:workouts.length,kilometers:roundXP(workouts.filter(event=>event.data.type==='run').reduce((sum,event)=>sum+(event.data.distance||0),0)),minutes:roundXP(workouts.reduce((sum,event)=>sum+(event.data.minutes||0),0)),volume,groups};
 }
+// Existing achievement IDs and rewards remain stable for previously awarded XP.
 export const achievementCatalog=[
- {id:'first-workout',title:'Начало положено',description:'Записать первую тренировку',xp:15,icon:'activity',target:1},
- {id:'full-day',title:'День для себя',description:'Выполнить весь базовый набор за день',xp:10,icon:'sun',target:1},
- {id:'run-10',title:'Первые 10 километров',description:'Пробежать суммарно 10 км',xp:30,icon:'chart',target:10},
- {id:'streak-10',title:'В своём ритме',description:'10 дней подряд отмечать дела или занятия',xp:50,icon:'flame',target:10},
- {id:'gym-5',title:'Пять встреч с железом',description:'Записать 5 занятий в зале',xp:30,icon:'activity',target:5},
- {id:'pushups-1000',title:'Тысяча повторений',description:'Накопить 1000 отжиманий',xp:50,icon:'person',target:1000}
+ {id:'first-workout',category:'routine',metric:'workouts',title:'Начало положено',description:'Записать первую тренировку',xp:15,icon:'activity',target:1,unit:'занятие'},
+ {id:'full-day',category:'routine',metric:'fullDays',title:'День для себя',description:'Выполнить весь базовый набор за день',xp:10,icon:'sun',target:1,unit:'день'},
+ {id:'run-10',category:'run',metric:'runTotal',title:'Первые 10 километров',description:'Пробежать суммарно 10 км',xp:30,icon:'chart',target:10,unit:'км'},
+ {id:'streak-10',category:'routine',metric:'streak',title:'В своём ритме',description:'10 дней подряд отмечать дела или занятия',xp:50,icon:'flame',target:10,unit:'дней'},
+ {id:'gym-5',category:'strength',metric:'gymCount',title:'Пять встреч с железом',description:'Записать 5 занятий в зале',xp:30,icon:'activity',target:5,unit:'занятий'},
+ {id:'pushups-1000',category:'strength',metric:'pushupsTotal',title:'Тысяча повторений',description:'Накопить 1000 отжиманий',xp:50,icon:'person',target:1000,unit:'повт.'},
+ {id:'run-50',category:'run',metric:'runTotal',title:'Полсотни за спиной',description:'Пробежать суммарно 50 км',xp:40,icon:'chart',target:50,unit:'км'},
+ {id:'run-100',category:'run',metric:'runTotal',title:'Первая сотня',description:'Пробежать суммарно 100 км',xp:60,icon:'chart',target:100,unit:'км'},
+ {id:'run-500',category:'run',metric:'runTotal',title:'Большой путь',description:'Пробежать суммарно 500 км',xp:100,icon:'chart',target:500,unit:'км'},
+ {id:'run-single-5',category:'run',metric:'runLongest',title:'Пятёрка одним махом',description:'Пробежать 5 км за одну тренировку',xp:15,icon:'activity',target:5,unit:'км'},
+ {id:'run-single-10',category:'run',metric:'runLongest',title:'Десятка за раз',description:'Пробежать 10 км за одну тренировку',xp:25,icon:'activity',target:10,unit:'км'},
+ {id:'run-half',category:'run',metric:'runLongest',title:'Полумарафон',description:'21,0975 км за одну пробежку',xp:75,icon:'award',target:21.0975,unit:'км'},
+ {id:'run-marathon',category:'run',metric:'runLongest',title:'Марафон',description:'42,195 км за одну пробежку',xp:150,icon:'award',target:42.195,unit:'км'},
+ {id:'bench-40',category:'strength',metric:'bench',title:'Первые сорок в жиме',description:'Жим штанги лёжа: записать подход с 40 кг',xp:20,icon:'activity',target:40,unit:'кг'},
+ {id:'bench-60',category:'strength',metric:'bench',title:'Жим: 60',description:'Жим штанги лёжа: записать подход с 60 кг',xp:35,icon:'activity',target:60,unit:'кг'},
+ {id:'bench-80',category:'strength',metric:'bench',title:'Жим: 80',description:'Жим штанги лёжа: записать подход с 80 кг',xp:50,icon:'activity',target:80,unit:'кг'},
+ {id:'bench-100',category:'strength',metric:'bench',title:'Сотня в жиме',description:'Жим штанги лёжа: записать подход со 100 кг',xp:75,icon:'award',target:100,unit:'кг'},
+ {id:'squat-60',category:'strength',metric:'squat',title:'Присед: 60',description:'Присед со штангой: записать подход с 60 кг',xp:25,icon:'activity',target:60,unit:'кг'},
+ {id:'squat-100',category:'strength',metric:'squat',title:'Сотня в приседе',description:'Присед со штангой: записать подход со 100 кг',xp:50,icon:'award',target:100,unit:'кг'},
+ {id:'pullups-10',category:'strength',metric:'pullupsBest',title:'Десятка на перекладине',description:'10 подтягиваний в одном подходе',xp:25,icon:'person',target:10,unit:'повт.'},
+ {id:'pullups-15',category:'strength',metric:'pullupsBest',title:'Пятнадцать на перекладине',description:'15 подтягиваний в одном подходе',xp:40,icon:'person',target:15,unit:'повт.'},
+ {id:'pushups-50',category:'strength',metric:'pushupsBest',title:'Полсотни за подход',description:'50 отжиманий в одном подходе',xp:25,icon:'person',target:50,unit:'повт.'}
 ];
+const strengthAliases={
+ bench:new Set(['жим лежа','жим штанги лежа','жим лежа со штангой','горизонтальный жим штанги','bench press','barbell bench press']),
+ squat:new Set(['присед','приседания','присед со штангой','приседания со штангой','присед со штангой на спине','приседания со штангой на спине','barbell squat','back squat'])
+};
+function strengthMovement(entry){
+ const name=entry.exercise.toLowerCase().replaceAll('ё','е').replace(/[.,:;!]/g,'').replace(/\s+/g,' ').trim();
+ return Object.keys(strengthAliases).find(key=>strengthAliases[key].has(name));
+}
 export function achievements(value){
  const state=normalize(value),records=personalRecords(state),workouts=state.events.filter(event=>event.kind==='workout');
- const metrics={'first-workout':records.workouts,'full-day':bonusDays(state).length,'run-10':records.kilometers,'streak-10':activeStreak(state).longest,'gym-5':workouts.filter(event=>event.data.type==='gym').length,'pushups-1000':workouts.filter(event=>event.data.type==='home'&&event.data.exercise==='pushups').reduce((sum,event)=>sum+event.data.reps.reduce((sum,rep)=>sum+rep,0),0)};
- return achievementCatalog.map(item=>({...item,current:metrics[item.id],unlocked:metrics[item.id]>=item.target,awarded:state.events.some(event=>event.id===`achievement:${item.id}`)}));
+ const metrics={workouts:records.workouts,fullDays:bonusDays(state).length,runTotal:records.kilometers,runLongest:0,streak:activeStreak(state).longest,gymCount:0,pushupsTotal:0,pushupsBest:0,pullupsBest:0,bench:0,squat:0};
+ for(const {data} of workouts){
+  if(data.type==='run')metrics.runLongest=Math.max(metrics.runLongest,data.distance||0);
+  if(data.type==='home'){
+   if(data.exercise==='pushups')metrics.pushupsTotal+=data.reps.reduce((sum,rep)=>sum+rep,0);
+   if(data.exercise==='pushups'||data.exercise==='pullups')for(const reps of data.reps)metrics[data.exercise+'Best']=Math.max(metrics[data.exercise+'Best'],reps);
+  }
+  if(data.type==='gym'){
+   metrics.gymCount++;
+   for(const entry of data.exercises){const movement=strengthMovement(entry);if(movement)metrics[movement]=Math.max(metrics[movement],entry.weight);}
+  }
+ }
+ const awarded=new Set(state.events.filter(event=>event.kind==='achievement').map(event=>event.achievement));
+ return achievementCatalog.map(item=>({...item,current:metrics[item.metric],unlocked:metrics[item.metric]+1e-9>=item.target,awarded:awarded.has(item.id)}));
 }
 export function awardAchievements(value,today=dayKey()){
  const state=normalize(value);
