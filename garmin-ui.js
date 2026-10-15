@@ -1,6 +1,7 @@
-import {setupHealthAnalysis} from './health-analysis-ui.js?v=0.7.0';
-import {garminURL,garminRequest,garminHealth} from './garmin.js?v=0.7.0';
-import {garminCandidates,importGarmin,dayKey,workoutDescription,workoutXP,formatXP} from './progress.js?v=0.7.0';
+import {mergeHealthHistory} from './health-analysis.js?v=0.7.1';
+import {setupHealthAnalysis} from './health-analysis-ui.js?v=0.7.1';
+import {garminURL,garminRequest} from './garmin.js?v=0.7.1';
+import {garminCandidates,importGarmin,dayKey,workoutDescription,workoutXP,formatXP} from './progress.js?v=0.7.1';
 const $=id=>document.getElementById(id),storageKey='my-character-garmin-v1';
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 
@@ -21,7 +22,7 @@ export function appendGarminDetails(container,source){
 export function setupGarmin({getState,persist,notify,getProfile,onImport,onDialog,onNavigate}){
   let settings=null,busy=false,generation=0,preview=[],payload=[],stopped=false,health=[],healthDay;
   try{const saved=JSON.parse(localStorage.getItem(storageKey));if(saved&&typeof saved.token==='string'&&/^[A-Za-z0-9_-]{20,128}$/.test(saved.token)){settings={url:garminURL(saved.url),token:saved.token,knownIds:Array.isArray(saved.knownIds)?saved.knownIds.filter(id=>typeof id==='string').slice(-5000):[],initialReviewed:saved.initialReviewed===true,automatic:saved.automatic===true,connectedDay:/^\d{4}-\d{2}-\d{2}$/.test(saved.connectedDay)?saved.connectedDay:dayKey()};}}catch{}
-  try{const saved=JSON.parse(localStorage.getItem('my-character-garmin-health-v1'));if(settings&&saved?.url===settings.url)health=(Array.isArray(saved.rows)?saved.rows:[]).slice(0,7).map(garminHealth).filter(Boolean);}catch{}
+  try{const saved=JSON.parse(localStorage.getItem('my-character-garmin-health-v1'));if(settings&&saved?.url===settings.url)health=mergeHealthHistory([],Array.isArray(saved.rows)?saved.rows.slice(0,120):[],dayKey());}catch{}
   const analysis=setupHealthAnalysis({onNavigate});
   $('garmin-analysis-open').addEventListener('click',()=>analysis.open('sleep',healthDay));
   function renderHealth(){
@@ -72,7 +73,7 @@ export function setupGarmin({getState,persist,notify,getProfile,onImport,onDialo
       const result=await garminRequest(current.url,'/v1/activities',{token:current.token});
       if(ticket!==generation||stopped)return;
       if(!Array.isArray(result.activities)||result.activities.length>100)throw new Error('Garmin-сервис вернул неожиданный ответ');
-      if(Array.isArray(result.health)){health=result.health.slice(0,7).map(garminHealth).filter(Boolean);try{localStorage.setItem('my-character-garmin-health-v1',JSON.stringify({url:settings.url,rows:health}));}catch{}renderHealth();}
+      if(Array.isArray(result.health)){health=mergeHealthHistory(health,result.health.slice(0,120),dayKey());try{localStorage.setItem('my-character-garmin-health-v1',JSON.stringify({url:settings.url,rows:health}));}catch{}renderHealth();}
       if(review){showPreview(result.activities);return;}
       if(!settings.initialReviewed){status('Подключено. Нажми «Новые занятия», чтобы выбрать записи для первого импорта.');return;}
       const known=new Set(settings.knownIds),candidates=garminCandidates(getState(),result.activities).filter(item=>!known.has(item.id));

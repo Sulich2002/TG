@@ -1,4 +1,4 @@
-import {garminHealth} from './garmin.js?v=0.7.0';
+import {garminHealth} from './garmin.js?v=0.7.1';
 
 export const healthMetrics={
   sleep:{label:'Сон',field:'sleepSeconds',section:'sleep',unit:'ч',description:'Продолжительность ночного сна. Дата — утро после этой ночи.'},
@@ -9,10 +9,15 @@ export const healthMetrics={
   hrv:{label:'Ночной HRV',field:'hrvNightAverage',section:'hrv',unit:'мс',description:'Средняя вариабельность пульса за ночь по данным Garmin.'}
 };
 export function shiftHealthDay(day,offset){const date=new Date(day+'T12:00:00Z');date.setUTCDate(date.getUTCDate()+offset);return date.toISOString().slice(0,10);}
-export function healthWeek(rawRows,today){
-  const start=shiftHealthDay(today,-6),rows=new Map();
+export function healthPeriod(rawRows,today,days=7){
+  if(![2,3,7,30].includes(days))days=7;
+  const start=shiftHealthDay(today,1-days),rows=new Map();
   for(const raw of rawRows){const row=garminHealth(raw);if(!row||row.day<start||row.day>today)continue;const old=rows.get(row.day);if(!old||Date.parse(row.updated||'')>=Date.parse(old.updated||'')||!old.updated)rows.set(row.day,row);}
-  return Array.from({length:7},(_,i)=>{const day=shiftHealthDay(start,i);return {day,row:rows.get(day)||null};});
+  return Array.from({length:days},(_,i)=>{const day=shiftHealthDay(start,i);return {day,row:rows.get(day)||null};});
+}
+export const healthWeek=(rows,today)=>healthPeriod(rows,today,7);
+export function mergeHealthHistory(previous,incoming,today){
+  return healthPeriod([...previous,...incoming],today,30).map(point=>point.row).filter(Boolean).reverse();
 }
 export function metricValue(row,key){
   const metric=healthMetrics[key];
@@ -24,9 +29,9 @@ export function healthSummary(week,key,today){
   const available=points.filter(p=>p.value!==null),complete=available.filter(p=>!p.partial);
   const average=complete.length?complete.reduce((sum,p)=>sum+p.value,0)/complete.length:null;
   // Compare equal calendar windows; missing days must not shift the comparison.
-  const left=points.slice(0,3),right=points.slice(3,6);
-  const change=left.every(p=>p.value!==null)&&right.every(p=>p.value!==null)?right.reduce((sum,p)=>sum+p.value,0)/3-left.reduce((sum,p)=>sum+p.value,0)/3:null;
-  return {points,available:available.length,count:complete.length,average,change,minimum:complete.length?Math.min(...complete.map(p=>p.value)):null,maximum:complete.length?Math.max(...complete.map(p=>p.value)):null};
+  const comparable=points.filter(p=>!p.partial),half=Math.floor(comparable.length/2),left=comparable.slice(0,half),right=comparable.slice(half,half*2);
+  const change=half>0&&left.every(p=>p.value!==null)&&right.every(p=>p.value!==null)?right.reduce((sum,p)=>sum+p.value,0)/half-left.reduce((sum,p)=>sum+p.value,0)/half:null;
+  return {points,available:available.length,count:complete.length,average,change,comparison:{left:left.map(p=>p.day),right:right.map(p=>p.day)},minimum:complete.length?Math.min(...complete.map(p=>p.value)):null,maximum:complete.length?Math.max(...complete.map(p=>p.value)):null};
 }
 export function formatHealth(value,key){
   if(value===null)return '—';

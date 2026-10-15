@@ -3,6 +3,12 @@
 set -euo pipefail
 umask 022
 [[ ${EUID} == 0 ]] || { echo 'Нужен терминал root.' >&2; exit 1; }
+tg_update=false
+case "${1:-}" in
+  '') ;;
+  --update) tg_update=true ;;
+  *) echo 'Usage: garmin-setup.sh [--update]' >&2; exit 1 ;;
+esac
 tg_bundle_sha='@TG_BUNDLE_SHA@'
 [[ "$tg_bundle_sha" =~ ^[0-9a-f]{64}$ ]] || { echo 'Используй собранный установщик garmin-setup.sh.' >&2; exit 1; }
 tg_root=/opt/tg-garmin
@@ -55,6 +61,52 @@ for name, text in files.items():
     path.write_text(text, encoding='utf-8'); path.chmod(0o644)
 PY_SOURCE
 # END_GARMIN_SOURCE
+if [[ "$tg_update" == true ]]; then
+  [[ -f "$tg_root/.diary-garmin" && -x "$tg_root/venv/bin/python" ]] || { echo 'Existing Garmin installation required.' >&2; exit 1; }
+  for tg_file in requirements.txt requirements-uv.txt; do
+    cmp -s "$tg_temp/source/$tg_file" "$tg_root/app/$tg_file" || { echo 'Dependencies differ; update stopped before changes.' >&2; exit 1; }
+  done
+  "$tg_root/venv/bin/python" -m compileall -q "$tg_temp/source"
+  tg_stage=$(mktemp -d "$tg_root/update.XXXXXX")
+  mkdir "$tg_stage/next"
+  cp -a "$tg_root/app/." "$tg_stage/next/"
+  for tg_file in api.py core.py health.py connector.py requirements.txt requirements-uv.txt; do
+    [[ ! -L "$tg_stage/next/$tg_file" ]] || { echo 'Symlink in Garmin installation.' >&2; exit 1; }
+    install -m 0644 "$tg_temp/source/$tg_file" "$tg_stage/next/$tg_file"
+  done
+  tg_timer_active=false; tg_api_active=false
+  if systemctl is-active --quiet tg-garmin-sync.timer; then tg_timer_active=true; fi
+  if systemctl is-active --quiet tg-garmin-api.service; then tg_api_active=true; fi
+  tg_swapped=false
+  # shellcheck disable=SC2329 # Called by the ERR trap below; rollback is tested.
+  tg_restore_update() {
+    trap - ERR
+    if [[ -d "$tg_stage/previous" ]]; then
+      if [[ "$tg_swapped" == true ]]; then
+        systemctl stop tg-garmin-api.service || true
+        mv "$tg_root/app" "$tg_stage/failed"
+      fi
+      mv "$tg_stage/previous" "$tg_root/app"
+    fi
+    if [[ "$tg_api_active" == true ]]; then systemctl start tg-garmin-api.service || true; fi
+    if [[ "$tg_timer_active" == true ]]; then systemctl start tg-garmin-sync.timer || true; fi
+    echo 'Update failed; previous Garmin code restored. VPN unchanged.' >&2
+    exit 1
+  }
+  trap 'tg_restore_update' ERR
+  systemctl stop tg-garmin-sync.timer tg-garmin-sync.service tg-garmin-api.service
+  mv "$tg_root/app" "$tg_stage/previous"
+  mv "$tg_stage/next" "$tg_root/app"
+  tg_swapped=true
+  if [[ "$tg_api_active" == true ]]; then systemctl start tg-garmin-api.service; fi
+  if [[ "$tg_timer_active" == true ]]; then systemctl start tg-garmin-sync.timer; fi
+  printf '%s\n' "$tg_bundle_sha" > "$tg_root/source-sha256"
+  trap - ERR
+  rm -rf "$tg_stage"
+  echo 'Garmin updated: workouts and daily metrics every 15 minutes; history up to 30 days.'
+  echo 'Login, app sessions and tunnel address preserved. No VPN changes.'
+  exit 0
+fi
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=l
 apt-get update -qq

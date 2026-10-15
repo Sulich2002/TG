@@ -137,7 +137,7 @@ class Store:
         with self.connect() as db:
             return db.execute("SELECT count(*) FROM activities").fetchone()[0]
 
-    def health(self, limit=7):
+    def health(self, limit=30):
         with self.connect() as db:
             rows = db.execute("SELECT normalized FROM health ORDER BY day DESC LIMIT ?", (limit,)).fetchall()
         return [json.loads(row[0]) for row in rows]

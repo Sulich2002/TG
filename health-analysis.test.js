@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {healthWeek,healthSummary,metricValue,shiftHealthDay,formatHealth} from './health-analysis.js';
+import {healthWeek,healthPeriod,mergeHealthHistory,healthSummary,metricValue,shiftHealthDay,formatHealth} from './health-analysis.js';
 const today='2026-10-15';
 const row=(day,extra={})=>({day,sleepSeconds:25200,steps:10000,averageStress:0,bodyBattery:20,bodyBatteryHighest:85,...extra});
 
@@ -33,4 +33,23 @@ test('comparison uses two complete equal calendar windows and never fills missin
 test('durations use minutes without wrapping and missing values are not zero',()=>{
  assert.equal(formatHealth(25200,'sleep'),'7 ч 0 мин');assert.equal(formatHealth(-5400,'sleep'),'−1 ч 30 мин');
  assert.equal(formatHealth(0,'stress'),'0');assert.equal(formatHealth(null,'sleep'),'—');
+});
+
+
+test('2, 3 and 30-day windows cross month boundaries and use the selected denominator',()=>{
+ const end='2026-11-02',rows=Array.from({length:30},(_,i)=>row(shiftHealthDay(end,i-29),{sleepSeconds:i<15?21600:28800}));
+ for(const days of [2,3,7,30]){const period=healthPeriod(rows,end,days);assert.equal(period.length,days);assert.equal(period.at(-1).day,end);assert.equal(healthSummary(period,'sleep',end).available,days);}
+ const month=healthPeriod(rows,end,30);assert.equal(month[0].day,'2026-10-04');assert.equal(healthSummary(month,'sleep',end).change,7200);
+ const two=healthPeriod([row('2026-11-01',{sleepSeconds:21600}),row(end,{sleepSeconds:25200})],end,2);
+ assert.equal(healthSummary(two,'sleep',end).average,23400);assert.equal(healthSummary(two,'sleep',end).change,3600);
+ assert.equal(healthSummary(two,'steps',end).change,null);
+ assert.equal(healthPeriod(rows,end,999).length,7);
+});
+test('rolling server snapshots accumulate at most 30 days without mixing or duplicating dates',()=>{
+ const previous=[row('2026-10-01'),row('2026-10-14',{updated:'2026-10-14T10:00:00Z',steps:5000})];
+ const incoming=[row('2026-10-14',{updated:'2026-10-14T12:00:00Z',steps:6000}),row(today)];
+ const merged=mergeHealthHistory(previous,incoming,today);
+ assert.deepEqual(merged.map(r=>r.day),[today,'2026-10-14','2026-10-01']);assert.equal(merged[1].steps,6000);
+ const later=mergeHealthHistory(merged,[row('2026-11-01')],'2026-11-01');assert.equal(later.some(r=>r.day==='2026-10-01'),false);
+ assert.equal(mergeHealthHistory([],incoming,today).some(r=>r.day==='2026-10-01'),false);
 });

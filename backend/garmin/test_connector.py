@@ -3,9 +3,11 @@ import json
 import math
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from datetime import date, timedelta
 
 from api import ORIGIN, check_password, make_server, password_record
 from core import Store, heart_samples, normalize_activity, synchronize
@@ -111,7 +113,7 @@ class ConnectorTests(unittest.TestCase):
         self.assertIsNone(missing["restingHeartRate"])
         self.assertIsNone(missing["sleepStages"]["deep"])
 
-    def test_health_polling_is_hourly_upserts_days_and_keeps_previous_partial_data(self):
+    def test_health_polling_is_15_minutes_upserts_days_and_keeps_previous_partial_data(self):
         class Client:
             calls = 0
             fail_sleep = False
@@ -130,8 +132,17 @@ class ConnectorTests(unittest.TestCase):
         synchronize_health(client, self.store, "2026-10-15")
         self.assertEqual([row["day"] for row in self.store.health()], ["2026-10-15", "2026-10-14"])
         self.assertEqual(self.store.health()[0]["sleepSeconds"], 25200)
+        self.assertEqual(self.store.get("healthSyncInterval"), 900)
+        self.assertAlmostEqual(self.store.get("nextHealthSync") - time.time(), 900, delta=5)
         synchronize_health(client, self.store, "2026-10-15")
         self.assertEqual(client.calls, 2)
+        self.store.set("nextHealthSync", time.time() - 1)
+        synchronize_health(client, self.store, "2026-10-15")
+        self.assertEqual(client.calls, 4)
+        self.store.set("healthSyncInterval", 3600)
+        self.store.set("nextHealthSync", time.time() + 3600)
+        synchronize_health(client, self.store, "2026-10-15")
+        self.assertEqual(client.calls, 6, "upgrade replaces the previous hourly schedule")
         client.fail_sleep = True
         synchronize_health(client, self.store, "2026-10-15", force=True)
         self.assertEqual(len(self.store.health()), 2)
@@ -162,6 +173,10 @@ class ConnectorTests(unittest.TestCase):
         password = "test-fixture-password-only"
         self.store.set("appPassword", password_record(password))
         self.store.upsert(activity(), {}, details())
+        for offset in range(31):
+            day = (date(2026, 10, 15) - timedelta(days=offset)).isoformat()
+            normalized = normalize_health(day, {"daily": {"totalSteps": 1000 + offset}})
+            self.store.upsert_health(day, normalized, {"private": "fixture-private-raw"}, "2026-09-01")
         server = make_server(self.store, ("127.0.0.1", 0))
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
@@ -188,6 +203,11 @@ class ConnectorTests(unittest.TestCase):
             self.assertEqual(headers["Cache-Control"], "no-store")
             self.assertEqual(headers["Access-Control-Allow-Origin"], ORIGIN)
             self.assertEqual(len(json.loads(data)["activities"]), 1)
+            health = json.loads(data)["health"]
+            self.assertEqual(len(health), 30)
+            self.assertEqual(health[0]["day"], "2026-10-15")
+            self.assertEqual(health[-1]["day"], "2026-09-16")
+            self.assertNotIn(b"fixture-private-raw", data)
             self.assertEqual(request("GET", "/v1/activities?token=" + token)[0], 401)
             self.assertEqual(request("POST", "/v1/logout", headers=auth)[0], 200)
             self.assertEqual(request("GET", "/v1/activities", headers=auth)[0], 401)

@@ -40,7 +40,8 @@ def normalize_health(day, raw, warnings=None):
 
 
 def synchronize_health(client, store, today, force=False):
-    if not force and time.time() < store.get("nextHealthSync", 0):
+    interval = 15 * 60
+    if not force and store.get("healthSyncInterval") == interval and time.time() < store.get("nextHealthSync", 0):
         return
     current = date.fromisoformat(today)
     methods = {"daily": client.get_stats, "heart": client.get_heart_rates, "sleep": client.get_sleep_data, "hrv": client.get_hrv_data}
@@ -61,4 +62,5 @@ def synchronize_health(client, store, today, force=False):
                     warnings.append(key)  # Retain previous data if a section fails.
         normalized = normalize_health(day, raw, warnings)
         store.upsert_health(day, normalized, raw, (current - timedelta(days=30)).isoformat())
-    store.set("nextHealthSync", time.time() + 3600)
+    store.set("healthSyncInterval", interval)
+    store.set("nextHealthSync", time.time() + interval)
