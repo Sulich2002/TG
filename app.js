@@ -1,5 +1,6 @@
-import {normalizeProfile} from './profile.js?v=0.5.0';
-import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.5.0';
+import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.6.0';
+import {normalizeProfile} from './profile.js?v=0.6.0';
+import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.6.0';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
 let state;
@@ -51,6 +52,7 @@ function renderHistory() {
     symbol.innerHTML=icon(event.kind==='workout'?'activity':event.kind==='bonus'?'sun':event.kind==='achievement'?'award':(task?.icon||'check'));
     const content=element('div');content.append(element('b',event.kind==='workout'?workoutTypes[event.data.type]:event.kind==='bonus'?'Все дела на сегодня выполнены':event.kind==='plan'?event.plan.title:event.kind==='achievement'?badge.title:task.title));
     content.append(element('small',event.kind==='workout'?workoutDescription(event.data):event.kind==='bonus'?'Бонус за полный набор':event.kind==='plan'?'Свой план · '+planSizes[event.plan.size].title:event.kind==='achievement'?'Достижение · '+badge.description:'Базовое дело: разминка, душ, завтрак или чтение'));
+    if(event.kind==='workout'&&event.data.source?.provider==='garmin')appendGarminDetails(content,event.data.source);
     row.append(symbol,content,element('strong',`+${formatXP(event.xp)} XP`));container.append(row);
   }
 }
@@ -166,7 +168,7 @@ function renderPlans(){
 async function ensureAvatar(){
   if(avatar){avatar.setLevel(levelProgress(totalXP(state)).level);avatar.setActive(true);return;}
   if(avatarPromise)return;
-  avatarPromise=import('./avatar.js?v=0.5.0').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
+  avatarPromise=import('./avatar.js?v=0.6.0').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
 }
 $('add-plan').addEventListener('click',()=>{$('plan-form').reset();$('plan-error').textContent='';$('plan-dialog').showModal();updateBack();});
 $('close-plan').addEventListener('click',()=>$('plan-dialog').close());$('plan-dialog').addEventListener('close',updateBack);
@@ -242,3 +244,5 @@ function initializeTelegram(){
   applyInsets();app.onEvent?.('safeAreaChanged',applyInsets);app.onEvent?.('contentSafeAreaChanged',applyInsets);app.BackButton?.onClick(()=>{document.querySelector('dialog[open]')?(profile?document.querySelector('dialog[open]').close():null):navigate('today');});updateBack();
 }
 document.querySelector('script[src*="telegram-web-app"]').addEventListener('load',initializeTelegram);initializeTelegram();render();if(!profile)editProfile();else persist(state);
+
+setupGarmin({getState:()=>state,persist,notify,getProfile:()=>profile,onDialog:updateBack,onImport:day=>{historyDay=day;calendarWeek=weekStart(day);renderHistory();navigate('history');}});

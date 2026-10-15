@@ -25,6 +25,8 @@ jobs:
         run: npm ci
       - name: Verify application
         run: npm test
+      - name: Verify Garmin backend
+        run: python3 -m unittest discover -s backend/garmin -p 'test_*.py' -v
       - name: Prepare static website
         run: npm run build
       - uses: actions/configure-pages@v5

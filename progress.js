@@ -1,10 +1,11 @@
+import {garminSource,garminWorkout} from './garmin.js?v=0.6.0';
 export const tasks = [
   { id:'warmup', title:'Размяться', description:'Немного движения в комфортном темпе', xp:5, icon:'sun' },
   { id:'shower', title:'Принять душ', description:'Освежиться и начать день', xp:5, icon:'water' },
   { id:'breakfast', title:'Позавтракать', description:'Выделить время на завтрак', xp:5, icon:'cup' },
   { id:'reading', title:'Почитать', description:'Несколько страниц для себя', xp:10, icon:'book' }
 ];
-export const workoutTypes = { run:'Бег', football:'Футбол', home:'Домашняя тренировка', gym:'Зал' };
+export const workoutTypes = { run:'Бег', football:'Футбол', home:'Домашняя тренировка', gym:'Зал', other:'Занятие с Garmin' };
 export const exercises = { pushups:'Отжимания', pullups:'Подтягивания', squats:'Приседания' };
 export const muscleGroups = { back:'Спина', chest:'Грудь', legs:'Ноги', shoulders:'Плечи', arms:'Руки', full:'Всё тело' };
 const legacyRewards = {run:50,football:50,home:40,gym:60};
@@ -42,6 +43,11 @@ export function workoutData(input, today = dayKey()) {
     const raw = Array.isArray(input.reps) ? input.reps : String(input.reps || '').trim().split(/[,;\s]+/);
     if (raw.length < 1 || raw.length > 30) throw new Error('Укажи от 1 до 30 подходов');
     data.reps = raw.map(rep => number(rep,'Повторения',1000,false,true));
+  } else if(input.type==='other') {
+    if(!garminSource(input.source))throw new Error('Неизвестный источник занятия');
+    data.distance=number(input.distance,'Расстояние',5000,true);
+    data.minutes=number(input.minutes,'Время',10080,true);
+    if(data.distance===null&&data.minutes===null)throw new Error('В записи часов нет времени или расстояния');
   } else {
     // Accept both the original single-exercise record and new grouped sessions.
     const entries = Array.isArray(input.exercises) ? input.exercises : [input];
@@ -53,6 +59,7 @@ export function workoutData(input, today = dayKey()) {
       return {group:entry.group,exercise,weight:number(entry.weight,'Вес',1000,false,false,true),sets:number(entry.sets,'Подходы',30,false,true),reps:number(entry.reps,'Повторения',1000,false,true)};
     });
   }
+  if(input.source){const source=garminSource(input.source);if(source)data.source=source;}
   return data;
 }
 export function normalize(value) {
@@ -67,7 +74,7 @@ export function normalize(value) {
       if (!task || raw.id !== `${raw.day}:${task.id}`) continue;
       event = {id:raw.id,day:raw.day,kind:'task',task:task.id,xp:raw.rewardVersion===2?task.xp:task.id==='reading'?20:10,...(raw.rewardVersion===2?{rewardVersion:2}:{})};
     } else if (raw.kind === 'workout') {
-      try { const data = workoutData(raw.data); if(data.day!==raw.day) continue; event={id:raw.id,day:raw.day,kind:'workout',data,xp:raw.xpRule==='volume-v1'?workoutXP(data):legacyRewards[data.type],...(raw.xpRule==='volume-v1'?{xpRule:'volume-v1'}:{})}; } catch {continue;}
+      try { const data = workoutData(raw.data); if(data.day!==raw.day) continue; event={id:raw.id,day:raw.day,kind:'workout',data,xp:raw.xpRule==='volume-v1'?workoutXP(data):(legacyRewards[data.type]??0),...(raw.xpRule==='volume-v1'?{xpRule:'volume-v1'}:{})}; } catch {continue;}
     } else if(raw.kind==='plan') {
       const plan=normalizePlans([raw.plan])[0];
       if(!plan || raw.id!==`plan:${plan.id}`)continue;
@@ -115,6 +122,7 @@ export function addWorkout(value,input,id,today=dayKey()) {
 }
 const format=value=>new Intl.NumberFormat('ru',{maximumFractionDigits:2}).format(value);
 export function workoutDescription(data) {
+  if(data.type==='other')return [data.source?.title||'Занятие с Garmin',data.distance!=null?`${format(data.distance)} км`:null,data.minutes!=null?`${format(data.minutes)} мин`:null].filter(Boolean).join(' · ');
   if(data.type==='run'||data.type==='football') return [data.distance!=null?`${format(data.distance)} км`:null,data.minutes!=null?`${format(data.minutes)} мин`:null,data.type==='run'?runningPace(data):null].filter(Boolean).join(' · ');
   if(data.type==='home') return `${exercises[data.exercise]} · ${data.reps.join(' / ')}`;
   return data.exercises.map(entry=>`${muscleGroups[entry.group]} · ${entry.exercise} · ${format(entry.weight)} кг · ${entry.sets} × ${entry.reps}`).join(' / ');
@@ -136,6 +144,7 @@ export function personalRecords(value) {
 }
 
 export function workoutXP(data) {
+  if(data.type==='other')return 0;
   if(data.type==='run') return roundXP(data.distance!=null ? data.distance*10 : data.minutes/2);
   if(data.type==='football') return roundXP(data.minutes);
   if(data.type==='home') return roundXP(data.reps.reduce((sum,rep)=>sum+rep,0)*(data.exercise==='pullups'?.5:.1));
@@ -201,7 +210,7 @@ export function weeklySummary(value,anchor=dayKey()){
  const events=state.events.filter(event=>days.includes(event.day)),workouts=events.filter(event=>event.kind==='workout');
  const groups=Object.fromEntries(Object.keys(muscleGroups).map(group=>[group,0]));let volume=0;
  for(const event of workouts)if(event.data.type==='gym')for(const entry of event.data.exercises){groups[entry.group]+=entry.sets;volume+=entry.weight*entry.sets*entry.reps;}
- return {start,days:days.map(day=>({day,workouts:workouts.filter(event=>event.day===day).length})),workouts:workouts.length,kilometers:roundXP(workouts.filter(event=>event.data.type==='run').reduce((sum,event)=>sum+(event.data.distance||0),0)),minutes:roundXP(workouts.reduce((sum,event)=>sum+(event.data.minutes||0),0)),volume,groups};
+ return {start,days:days.map(day=>({day,workouts:workouts.filter(event=>event.day===day).length})),workouts:workouts.length,kilometers:roundXP(workouts.filter(event=>event.data.type==='run').reduce((sum,event)=>sum+(event.data.distance||0),0)),minutes:roundXP(workouts.filter(event=>['run','football'].includes(event.data.type)).reduce((sum,event)=>sum+(event.data.minutes||0),0)),volume,groups};
 }
 // Existing achievement IDs and rewards remain stable for previously awarded XP.
 export const achievementCatalog=[
@@ -257,4 +266,22 @@ export function awardAchievements(value,today=dayKey()){
  const state=normalize(value);
  const earned=achievements(state).filter(item=>item.unlocked&&!item.awarded).map(item=>({id:`achievement:${item.id}`,day:today,kind:'achievement',achievement:item.id,xp:item.xp}));
  return {...state,events:[...state.events,...earned]};
+}
+
+
+export function garminCandidates(value,activities,today=dayKey()){
+ const state=normalize(value),seen=new Set(state.events.filter(e=>e.kind==='workout'&&e.data.source?.provider==='garmin').map(e=>e.data.source.id)),result=[];
+ for(const activity of (Array.isArray(activities)?activities:[]).slice(0,100)){
+  const input=garminWorkout(activity);if(!input||input.day>today||seen.has(input.source.id))continue;
+  let data;try{data=workoutData(input,today);}catch{continue;}
+  seen.add(input.source.id);
+  const duplicate=state.events.some(e=>e.kind==='workout'&&!e.data.source&&e.data.type===data.type&&e.day===data.day&&((e.data.distance!=null&&data.distance!=null&&Math.abs(e.data.distance-data.distance)<=.1)||(e.data.minutes!=null&&data.minutes!=null&&Math.abs(e.data.minutes-data.minutes)<=2)));
+  result.push({id:input.source.id,data,duplicate,title:data.source.title});
+ }
+ return result;
+}
+export function importGarmin(value,activities,selected,today=dayKey()){
+ let state=normalize(value);const ids=new Set(selected);
+ for(const item of garminCandidates(state,activities,today))if(ids.has(item.id)&&!state.events.some(e=>e.id==='garmin:'+item.id))state=addWorkout(state,item.data,'garmin:'+item.id,today);
+ return state;
 }
