@@ -1,5 +1,5 @@
-import {garminURL} from './garmin.js?v=0.8.0';
-import {normalize,awardAchievements,formatXP} from './progress.js?v=0.8.0';
+import {garminURL} from './garmin.js?v=0.8.1';
+import {normalize,awardAchievements,formatXP} from './progress.js?v=0.8.1';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const accountKey='my-character-account-v1',backupKey='my-character-before-account-v1';
@@ -11,7 +11,7 @@ function invitation(url,invite){const link=new URL(location.href);link.hash=new 
 function parseInvitation(){try{const value=JSON.parse(new URLSearchParams(location.hash.slice(1)).get('join'));if(typeof value.invite==='string'&&/^[A-Za-z0-9_-]{20,128}$/.test(value.invite))return {url:garminURL(value.url),invite:value.invite};}catch{}return null;}
 
 export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
- let settings=null,period='week',busy=false,ready=false,conflict=false,version=0,timer,pendingInvite=parseInvitation();
+ let settings=null,period='week',busy=false,ready=false,conflict=false,version=0,boardGeneration=0,timer,pendingInvite=parseInvitation();
  try{const saved=JSON.parse(localStorage.getItem(accountKey));if(saved&&/^[A-Za-z0-9_-]{20,128}$/.test(saved.token)&&typeof saved.id==='string'&&Number.isSafeInteger(saved.revision)){settings={...saved,url:garminURL(saved.url)};}}catch{}
  const initialGarmin=()=>{try{return JSON.parse(localStorage.getItem('my-character-garmin-v1'));}catch{return null;}};
  function save(){localStorage.setItem(accountKey,JSON.stringify(settings));}
@@ -66,7 +66,9 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  });
  async function refresh(){
   if(!settings)return;
-  try{const result=await request(settings.url,'/v2/leaderboard/'+period,{token:settings.token});
+  const ticket=++boardGeneration,selectedPeriod=period;
+  try{const result=await request(settings.url,'/v2/leaderboard/'+selectedPeriod,{token:settings.token});
+   if(ticket!==boardGeneration||selectedPeriod!==period)return;
    const label=day=>new Intl.DateTimeFormat('ru',{day:'numeric',month:'short'}).format(new Date(day+'T12:00:00'));
    $('friends-range').textContent=label(result.start)+' — '+label(result.end);
    $('friends-list').replaceChildren(...result.entries.map(entry=>{const row=node('li',null,'friend-row');row.classList.toggle('friend-self',entry.id===settings.id);const text=node('div');text.append(node('b',entry.name+(entry.id===settings.id?' · ты':'')),node('small','Уровень '+entry.level));row.append(node('span',String(entry.rank),'friend-rank'),text,node('strong',formatXP(entry.xp)+' XP'));return row;}));
