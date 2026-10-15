@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {tasks,normalize,migrate,totalXP,completed,complete,bonusDays,addWorkout,workoutData,personalRecords,workoutDescription} from './progress.js';
+import {tasks,normalize,migrate,totalXP,completed,complete,bonusDays,addWorkout,workoutData,personalRecords,workoutDescription,workoutXP,levelProgress,runningPace,addPlan,completePlan,removePlan} from './progress.js';
 const today='2026-10-15';
 test('daily tasks award once and completing the full set grants one bonus',()=>{
  let state=normalize(null);
@@ -19,7 +19,7 @@ test('new calendar day unlocks tasks without removing accumulated XP',()=>{
 test('legacy XP is preserved without fabricating workouts or physical attributes',()=>{
  const state=migrate({total:130,done:['touch'],trainingCounts:{touch:5}});
  assert.equal(totalXP(state),130);assert.equal(personalRecords(state).workouts,0);
- assert.deepEqual(migrate({total:-10}),{base:0,events:[]});
+ assert.deepEqual(migrate({total:-10}),{base:0,events:[],plans:[]});
 });
 test('run accepts distance only or time only; football requires time',()=>{
  assert.equal(workoutData({type:'run',day:today,distance:'2,5'},today).distance,2.5);
@@ -38,31 +38,68 @@ test('home sets retain individual repetitions and records compare measured value
  state=addWorkout(state,{type:'home',day:today,exercise:'pushups',reps:'20, 16'},'two',today);
  assert.deepEqual(state.events[0].data.reps,[15,12,10]);
  assert.deepEqual(personalRecords(state).pushups,{first:15,latest:20,best:20});
- assert.equal(personalRecords(state).pullups,null);assert.equal(totalXP(state),80);
+ assert.equal(personalRecords(state).pullups,null);assert.equal(totalXP(state),7.3);
 });
-test('gym stores the exercise, muscle group, zero or positive weight, sets and reps',()=>{
- const data=workoutData({type:'gym',day:today,group:'back',exercise:'Тяга',weight:30,sets:3,reps:12},today);
+test('gym supports multiple groups and exercises, including legacy single records',()=>{
+ const first={group:'back',exercise:'Тяга',weight:30,sets:3,reps:12};
+ const data=workoutData({type:'gym',day:today,...first},today);
  assert.equal(workoutDescription(data),'Спина · Тяга · 30 кг · 3 × 12');
- assert.equal(workoutData({...data,weight:0},today).weight,0);
- assert.throws(()=>workoutData({...data,sets:1.5},today));
- assert.throws(()=>workoutData({...data,weight:''},today));
- assert.throws(()=>workoutData({...data,exercise:''},today));
+ assert.equal(workoutData({type:'gym',exercises:[{...first,weight:0}]},today).exercises[0].weight,0);
+ for(const invalid of [{...first,sets:1.5},{...first,weight:''},{...first,exercise:''}])assert.throws(()=>workoutData({type:'gym',exercises:[invalid]},today));
+ const multi=workoutData({type:'gym',day:today,exercises:[first,{group:'chest',exercise:'Жим',weight:40,sets:3,reps:10}]},today);
+ assert.equal(multi.exercises.length,2);assert.equal(workoutXP(multi),34.8);
 });
-test('workout XP does not increase with volume and duplicate submission is idempotent',()=>{
+test('workout XP increases with measured volume and duplicate submission is idempotent',()=>{
  const a=addWorkout(null,{type:'run',day:today,distance:1},'one',today);
  const b=addWorkout(null,{type:'run',day:today,distance:20},'one',today);
- assert.equal(totalXP(a),totalXP(b));
+ assert.equal(totalXP(a),10);assert.equal(totalXP(b),200);
  assert.deepEqual(addWorkout(a,{type:'run',day:today,distance:1},'one',today),a);
 });
 test('history round trip keeps records and XP, rejecting duplicate or invalid events',()=>{
  let state=complete(null,'shower',today);state=addWorkout(state,{type:'football',day:today,minutes:70},'match',today);
  assert.deepEqual(normalize(JSON.parse(JSON.stringify(state))),state);
  const corrupt=normalize({base:0,events:[...state.events,...state.events,{id:'bad',day:'oops',kind:'workout'}]});
- assert.deepEqual(corrupt,state);assert.equal(totalXP(corrupt),60);
+ assert.deepEqual(corrupt,state);assert.equal(totalXP(corrupt),80);
 });
 test('run distance sums only runs with a known distance, not football or time-only runs',()=>{
  let state=addWorkout(null,{type:'run',day:today,distance:3},'r1',today);
  state=addWorkout(state,{type:'run',day:today,minutes:20},'r2',today);
  state=addWorkout(state,{type:'football',day:today,minutes:70,distance:8},'f1',today);
  assert.equal(personalRecords(state).kilometers,3);assert.equal(personalRecords(state).runs,2);assert.equal(personalRecords(state).workouts,3);
+});
+
+test('10, 100 and 1000 pushups award 1, 10 and 100 XP; small amounts are retained',()=>{
+ for(const count of [1,10,100,1000])assert.equal(workoutXP(workoutData({type:'home',exercise:'pushups',reps:[count]},today)),count/10);
+ assert.equal(workoutXP(workoutData({type:'football',minutes:120},today)),120);
+ assert.equal(workoutXP(workoutData({type:'run',minutes:30},today)),15);
+});
+test('level costs increase: 100,125,150,175 with correct boundaries',()=>{
+ for(const [total,level,current,required] of [[0,1,0,100],[99.9,1,99.9,100],[100,2,0,125],[224.9,2,124.9,125],[225,3,0,150],[375,4,0,175],[550,5,0,200]]){
+  const value=levelProgress(total);assert.deepEqual({level:value.level,current:value.current,required:value.required},{level,current,required});
+ }
+});
+test('pace uses both inputs and carries seconds into minutes',()=>{
+ assert.equal(runningPace({distance:3,minutes:18}),'6:00 мин/км');
+ assert.equal(runningPace({distance:1,minutes:5.999}),'6:00 мин/км');
+ assert.equal(runningPace({distance:3,minutes:null}),null);
+});
+test('already earned legacy workout XP and single gym records survive normalization',()=>{
+ const state=normalize({base:5,events:[{id:'old-run',day:today,kind:'workout',data:{type:'run',day:today,distance:20,minutes:120},xp:50},{id:'old-gym',day:today,kind:'workout',data:{type:'gym',day:today,group:'back',exercise:'Тяга',weight:30,sets:3,reps:10},xp:60}]});
+ assert.equal(totalXP(state),115);assert.equal(state.events[1].data.exercises.length,1);
+ assert.equal(totalXP(normalize(JSON.parse(JSON.stringify(state)))),115);
+});
+test('plans grant chosen XP only once and never change the daily-set bonus',()=>{
+ let state=addPlan(null,{title:'Пройти урок',size:'medium'},'p1',today);
+ assert.equal(totalXP(state),0);state=completePlan(state,'p1',today);assert.equal(totalXP(state),15);
+ assert.deepEqual(completePlan(state,'p1',today),state);assert.deepEqual(bonusDays(state),[]);
+ assert.deepEqual(removePlan(state,'p1'),state);
+ state=addPlan(state,{title:'Сходить на работу',size:'large'},'p2',today);
+ assert.equal(removePlan(state,'p2').plans.length,1);
+ assert.equal(totalXP(normalize(JSON.parse(JSON.stringify(state)))),15);
+ assert.throws(()=>addPlan(state,{title:'   ',size:'large'},'bad',today));
+});
+test('gym records keep distinct exercises and muscle groups and compare real weights',()=>{
+ let state=addWorkout(null,{type:'gym',day:'2026-10-14',exercises:[{group:'back',exercise:'Тяга',weight:30,sets:3,reps:10},{group:'chest',exercise:'Жим',weight:40,sets:3,reps:10}]},'g1',today);
+ state=addWorkout(state,{type:'gym',day:today,exercises:[{group:'back',exercise:'тяга',weight:35,sets:3,reps:10}]},'g2',today);
+ const records=personalRecords(state).gym;assert.equal(records.length,2);assert.deepEqual(records[0],{group:'back',exercise:'Тяга',firstWeight:30,latestWeight:35,bestWeight:35,bestVolume:1050});
 });

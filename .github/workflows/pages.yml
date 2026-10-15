@@ -21,12 +21,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Install pinned dependencies
+        run: npm ci
       - name: Verify application
         run: npm test
       - name: Prepare static website
-        run: |
-          mkdir _site
-          cp index.html style.css app.js progress.js _site/
+        run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
