@@ -1,5 +1,5 @@
-import {healthMetrics,healthPeriod,healthSummary,metricValue,formatHealth} from './health-analysis.js?v=0.7.1';
-import {dayKey} from './progress.js?v=0.7.1';
+import {healthMetrics,healthPeriod,healthSummary,metricValue,formatHealth} from './health-analysis.js?v=0.8.0';
+import {dayKey} from './progress.js?v=0.8.0';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const dateLabel=day=>new Intl.DateTimeFormat('ru',{day:'numeric',month:'short'}).format(new Date(day+'T12:00:00'));
@@ -11,12 +11,12 @@ export function setupHealthAnalysis({onNavigate}){
   $('garmin-analysis-period').addEventListener('change',()=>{days=Number($('garmin-analysis-period').value);try{localStorage.setItem('my-character-garmin-period',String(days));}catch{}render();});
   function chooseTab(tab){
     for(const button of document.querySelectorAll('[data-progress-tab]')){const active=button.dataset.progressTab===tab;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;}
-    $('progress-activities').hidden=tab!=='activities';$('progress-garmin').hidden=tab!=='garmin';
+    for(const name of ['activities','garmin','friends'])$('progress-'+name).hidden=tab!==name;
   }
   for(const button of document.querySelectorAll('[data-progress-tab]'))button.addEventListener('click',()=>{chooseTab(button.dataset.progressTab);render();});
   document.querySelector('.progress-tabs').addEventListener('keydown',event=>{
     if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
-    event.preventDefault();const buttons=[...document.querySelectorAll('[data-progress-tab]')],index=buttons.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?1:(index+1)%2;buttons[next].click();buttons[next].focus();
+    event.preventDefault();const buttons=[...document.querySelectorAll('[data-progress-tab]')],index=buttons.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowLeft'?-1:1)+buttons.length)%buttons.length;buttons[next].click();buttons[next].focus();
   });
   $('garmin-analysis-connect').addEventListener('click',()=>onNavigate('workout'));
   function open(metric='sleep',day){key=healthMetrics[metric]?metric:'sleep';selectedDay=day||dayKey();chooseTab('garmin');onNavigate('progress');render();}

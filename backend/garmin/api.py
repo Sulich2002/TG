@@ -29,6 +29,8 @@ def token_digest(token):
 
 
 def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN):
+    from accounts import Accounts, AccountError
+    accounts = Accounts(store, password_record, check_password, token_digest)
     attempts = []
     lock = threading.Lock()
 
@@ -78,6 +80,8 @@ def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN):
                 return self.respond(200, {"service": "diary-garmin", "version": 1})
             if not self.allowed_origin():
                 return self.respond(403, {"error": "origin"})
+            if self.path.startswith('/v2/'):
+                return self.account_request('GET')
             if not self.authenticated():
                 return self.respond(401, {"error": "unauthorized"})
             if self.path == "/v1/activities":
@@ -87,6 +91,8 @@ def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN):
         def do_POST(self):
             if not self.allowed_origin():
                 return self.respond(403, {"error": "origin"})
+            if self.path.startswith('/v2/'):
+                return self.account_request('POST')
             if self.path == "/v1/logout":
                 if not self.authenticated():
                     return self.respond(401, {"error": "unauthorized"})
@@ -116,6 +122,55 @@ def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN):
                 db.execute("DELETE FROM sessions WHERE expires<=?", (time.time(),))
                 db.execute("INSERT INTO sessions VALUES (?,?)", (token_digest(token), time.time() + 30 * 86400))
             self.respond(200, {"token": token})
+
+        def account_request(self, method):
+            try:
+                public = self.path in ('/v2/register', '/v2/login', '/v2/create-group') and method == 'POST'
+                if public:
+                    with lock:
+                        now = time.time()
+                        attempts[:] = [t for t in attempts if now - t < 60]
+                        if len(attempts) >= 8:
+                            raise AccountError('rate_limited', 429)
+                        attempts.append(now)
+                    if self.path == '/v2/create-group' and not self.authenticated():
+                        raise AccountError('owner_required', 403)
+                else:
+                    auth = self.headers.get('Authorization', '')
+                    if not auth.startswith('Bearer ') or not 20 <= len(auth[7:]) <= 128:
+                        raise AccountError('account_required', 401)
+                    user = accounts.user(auth[7:])
+                if method == 'POST':
+                    length = int(self.headers.get('Content-Length', '0'))
+                    maximum = 2*1024*1024 if self.path in ('/v2/sync','/v2/register','/v2/create-group') else 4096
+                    if not 0 < length <= maximum or self.headers.get_content_type() != 'application/json':
+                        raise AccountError('invalid_request')
+                    def invalid_constant(_):
+                        raise ValueError('non-finite JSON')
+                    body = json.loads(self.rfile.read(length), parse_constant=invalid_constant)
+                    if not isinstance(body, dict):
+                        raise AccountError('invalid_request')
+                    if self.path in ('/v2/register', '/v2/create-group'):
+                        return self.respond(200, accounts.register(body, owner=self.path == '/v2/create-group'))
+                    if self.path == '/v2/login':
+                        return self.respond(200, accounts.login(body))
+                    if self.path == '/v2/sync':
+                        return self.respond(200, {'account': accounts.sync(user, body)})
+                    if self.path == '/v2/invite':
+                        return self.respond(200, accounts.invite(user))
+                    if self.path == '/v2/logout':
+                        with store.connect() as db:
+                            db.execute('DELETE FROM friend_sessions WHERE digest=?', (token_digest(auth[7:]),))
+                        return self.respond(200, {'ok': True})
+                elif self.path == '/v2/me':
+                    return self.respond(200, {'account': accounts.snapshot(user)})
+                elif self.path in ('/v2/leaderboard/week','/v2/leaderboard/month'):
+                    return self.respond(200, accounts.leaderboard(user, self.path.rsplit('/',1)[1]))
+                raise AccountError('not_found',404)
+            except AccountError as error:
+                return self.respond(error.status, {'error':error.code})
+            except (ValueError, TypeError, UnicodeError):
+                return self.respond(400, {'error':'invalid_request'})
 
     class Server(ThreadingHTTPServer):
         slots = threading.BoundedSemaphore(32)

@@ -5,7 +5,7 @@ for(const name of ['three.module.js','three.core.js'])await copyFile(`node_modul
 await copyFile('node_modules/three/LICENSE','vendor/THREE-LICENSE.txt');
 await rm('_site',{recursive:true,force:true});
 await mkdir('_site/vendor',{recursive:true});
-for(const name of ['index.html','style.css','app.js','garmin.js','garmin-ui.js','health-analysis.js','health-analysis-ui.js','progress.js','avatar.js','avatar-shape.js','profile.js'])await copyFile(name,`_site/${name}`);
+for(const name of ['index.html','style.css','app.js','garmin.js','garmin-ui.js','friends-ui.js','health-analysis.js','health-analysis-ui.js','progress.js','avatar.js','avatar-shape.js','profile.js'])await copyFile(name,`_site/${name}`);
 for(const name of ['three.module.js','three.core.js','THREE-LICENSE.txt'])await copyFile(`vendor/${name}`,`_site/vendor/${name}`);
 console.log('Static Mini App and local 3D modules ready in _site.');
 

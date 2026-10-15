@@ -3,7 +3,7 @@ import {gzipSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
 
 export async function garminInstaller(){
-  const names=['api.py','core.py','health.py','connector.py','requirements.txt','requirements-uv.txt'];
+  const names=['api.py','core.py','health.py','accounts.py','rewards.json','connector.py','requirements.txt','requirements-uv.txt'];
   const source=Object.fromEntries(await Promise.all(names.map(async name=>[name,await readFile(new URL('../backend/garmin/'+name,import.meta.url),'utf8')])));
   const packed=gzipSync(Buffer.from(JSON.stringify(source)),{level:9});
   const sha=createHash('sha256').update(packed).digest('hex');

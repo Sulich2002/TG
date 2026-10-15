@@ -1,8 +1,10 @@
-import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.7.1';
-import {normalizeProfile} from './profile.js?v=0.7.1';
-import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.7.1';
+import {setupFriends} from './friends-ui.js?v=0.8.0';
+import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.8.0';
+import {normalizeProfile} from './profile.js?v=0.8.0';
+import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.8.0';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
+let friends;
 let state;
 try {
   const saved=localStorage.getItem(storageKey);
@@ -20,7 +22,7 @@ function persist(next,message) {
   const settled=awardAchievements(next),extra=totalXP(settled)-totalXP(next);
   try {localStorage.setItem(storageKey,JSON.stringify(settled));}
   catch {notify('Не удалось сохранить. Разреши хранение данных и попробуй ещё раз.');return false;}
-  state=settled;render();if(message)notify(message+(extra?` · Достижение +${formatXP(extra)} XP`:''));return true;
+  state=settled;render();friends?.changed();if(message)notify(message+(extra?` · Достижение +${formatXP(extra)} XP`:''));return true;
 }
 function updateBack() {
   const back=window.Telegram?.WebApp?.BackButton;
@@ -168,7 +170,7 @@ function renderPlans(){
 async function ensureAvatar(){
   if(avatar){avatar.setLevel(levelProgress(totalXP(state)).level);avatar.setActive(true);return;}
   if(avatarPromise)return;
-  avatarPromise=import('./avatar.js?v=0.7.1').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
+  avatarPromise=import('./avatar.js?v=0.8.0').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
 }
 $('add-plan').addEventListener('click',()=>{$('plan-form').reset();$('plan-error').textContent='';$('plan-dialog').showModal();updateBack();});
 $('close-plan').addEventListener('click',()=>$('plan-dialog').close());$('plan-dialog').addEventListener('close',updateBack);
@@ -246,3 +248,5 @@ function initializeTelegram(){
 document.querySelector('script[src*="telegram-web-app"]').addEventListener('load',initializeTelegram);initializeTelegram();render();if(!profile)editProfile();else persist(state);
 
 setupGarmin({getState:()=>state,persist,notify,getProfile:()=>profile,onDialog:updateBack,onNavigate:navigate,onImport:day=>{historyDay=day;calendarWeek=weekStart(day);renderHistory();navigate('history');}});
+
+friends=setupFriends({getState:()=>state,getProfile:()=>profile,onNavigate:navigate,onDialog:updateBack,notify});

@@ -1,0 +1,134 @@
+[
+  {
+    "id": "first-workout",
+    "metric": "workouts",
+    "target": 1,
+    "xp": 15
+  },
+  {
+    "id": "full-day",
+    "metric": "fullDays",
+    "target": 1,
+    "xp": 10
+  },
+  {
+    "id": "run-10",
+    "metric": "runTotal",
+    "target": 10,
+    "xp": 30
+  },
+  {
+    "id": "streak-10",
+    "metric": "streak",
+    "target": 10,
+    "xp": 50
+  },
+  {
+    "id": "gym-5",
+    "metric": "gymCount",
+    "target": 5,
+    "xp": 30
+  },
+  {
+    "id": "pushups-1000",
+    "metric": "pushupsTotal",
+    "target": 1000,
+    "xp": 50
+  },
+  {
+    "id": "run-50",
+    "metric": "runTotal",
+    "target": 50,
+    "xp": 40
+  },
+  {
+    "id": "run-100",
+    "metric": "runTotal",
+    "target": 100,
+    "xp": 60
+  },
+  {
+    "id": "run-500",
+    "metric": "runTotal",
+    "target": 500,
+    "xp": 100
+  },
+  {
+    "id": "run-single-5",
+    "metric": "runLongest",
+    "target": 5,
+    "xp": 15
+  },
+  {
+    "id": "run-single-10",
+    "metric": "runLongest",
+    "target": 10,
+    "xp": 25
+  },
+  {
+    "id": "run-half",
+    "metric": "runLongest",
+    "target": 21.0975,
+    "xp": 75
+  },
+  {
+    "id": "run-marathon",
+    "metric": "runLongest",
+    "target": 42.195,
+    "xp": 150
+  },
+  {
+    "id": "bench-40",
+    "metric": "bench",
+    "target": 40,
+    "xp": 20
+  },
+  {
+    "id": "bench-60",
+    "metric": "bench",
+    "target": 60,
+    "xp": 35
+  },
+  {
+    "id": "bench-80",
+    "metric": "bench",
+    "target": 80,
+    "xp": 50
+  },
+  {
+    "id": "bench-100",
+    "metric": "bench",
+    "target": 100,
+    "xp": 75
+  },
+  {
+    "id": "squat-60",
+    "metric": "squat",
+    "target": 60,
+    "xp": 25
+  },
+  {
+    "id": "squat-100",
+    "metric": "squat",
+    "target": 100,
+    "xp": 50
+  },
+  {
+    "id": "pullups-10",
+    "metric": "pullupsBest",
+    "target": 10,
+    "xp": 25
+  },
+  {
+    "id": "pullups-15",
+    "metric": "pullupsBest",
+    "target": 15,
+    "xp": 40
+  },
+  {
+    "id": "pushups-50",
+    "metric": "pushupsBest",
+    "target": 50,
+    "xp": 25
+  }
+]

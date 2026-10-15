@@ -50,7 +50,7 @@ packed = base64.b64decode("@TG_BUNDLE_B64@", validate=True)
 if hashlib.sha256(packed).hexdigest() != sys.argv[2]:
     raise SystemExit('Контрольная сумма установщика не совпала. Установка остановлена.')
 files = json.loads(gzip.decompress(packed))
-allowed = {'api.py','core.py','health.py','connector.py','requirements.txt','requirements-uv.txt'}
+allowed = {'api.py','core.py','health.py','accounts.py','rewards.json','connector.py','requirements.txt','requirements-uv.txt'}
 if set(files) != allowed or not all(isinstance(v,str) for v in files.values()):
     raise SystemExit('Неподходящие файлы в установщике.')
 target = Path(sys.argv[1]); target.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -70,7 +70,7 @@ if [[ "$tg_update" == true ]]; then
   tg_stage=$(mktemp -d "$tg_root/update.XXXXXX")
   mkdir "$tg_stage/next"
   cp -a "$tg_root/app/." "$tg_stage/next/"
-  for tg_file in api.py core.py health.py connector.py requirements.txt requirements-uv.txt; do
+  for tg_file in api.py core.py health.py accounts.py rewards.json connector.py requirements.txt requirements-uv.txt; do
     [[ ! -L "$tg_stage/next/$tg_file" ]] || { echo 'Symlink in Garmin installation.' >&2; exit 1; }
     install -m 0644 "$tg_temp/source/$tg_file" "$tg_stage/next/$tg_file"
   done
@@ -113,7 +113,7 @@ apt-get update -qq
 apt-get install -y --no-install-recommends ca-certificates curl python3-venv
 mkdir -p "$tg_root/app"
 touch "$tg_root/.diary-garmin"
-for tg_file in api.py core.py health.py connector.py requirements.txt requirements-uv.txt; do
+for tg_file in api.py core.py health.py accounts.py rewards.json connector.py requirements.txt requirements-uv.txt; do
   [[ ! -L "$tg_root/app/$tg_file" ]] || { echo 'Нельзя перезаписать символьную ссылку.' >&2; exit 1; }
   install -m 0644 "$tg_temp/source/$tg_file" "$tg_root/app/$tg_file"
 done
