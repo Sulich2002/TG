@@ -28,11 +28,13 @@ def token_digest(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN, garmin_service=None):
+def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN, garmin_service=None, coach_transport=None):
     from accounts import Accounts, AccountError
     from user_garmin import UserGarmin
     accounts = Accounts(store, password_record, check_password, token_digest)
     watches = garmin_service or UserGarmin(store)
+    from coach import Coach
+    coach = Coach(store, watches, **({'transport': coach_transport} if coach_transport else {}))
     attempts = []
     lock = threading.Lock()
 
@@ -144,7 +146,7 @@ def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN, garmin_servic
                     user = accounts.user(auth[7:])
                 if method == 'POST':
                     length = int(self.headers.get('Content-Length', '0'))
-                    maximum = 2*1024*1024 if self.path in ('/v2/sync','/v2/register','/v2/create-group') else 4096
+                    maximum = 2*1024*1024 if self.path in ('/v2/sync','/v2/register','/v2/create-group','/v2/coach/message') else 4096
                     if not 0 < length <= maximum or self.headers.get_content_type() != 'application/json':
                         raise AccountError('invalid_request')
                     def invalid_constant(_):
@@ -152,6 +154,14 @@ def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN, garmin_servic
                     body = json.loads(self.rfile.read(length), parse_constant=invalid_constant)
                     if not isinstance(body, dict):
                         raise AccountError('invalid_request')
+                    if self.path == '/v2/coach/provider':
+                        return self.respond(200, coach.provider(user, body))
+                    if self.path == '/v2/coach/settings':
+                        return self.respond(200, coach.settings(user, body))
+                    if self.path == '/v2/coach/message':
+                        return self.respond(200, coach.message(user, body))
+                    if self.path == '/v2/coach/clear':
+                        return self.respond(200, coach.clear(user))
                     if self.path == '/v2/garmin/connect':
                         return self.respond(200, watches.start(user, body.get('email'), body.get('password')))
                     if self.path == '/v2/garmin/mfa':
@@ -173,7 +183,9 @@ def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN, garmin_servic
                             db.execute('DELETE FROM friend_sessions WHERE digest=?', (token_digest(auth[7:]),))
                         return self.respond(200, {'ok': True})
                 elif self.path == '/v2/me':
-                    return self.respond(200, {'account': accounts.snapshot(user), 'features':{'customHabits':True,'swimming':True}})
+                    return self.respond(200, {'account': accounts.snapshot(user), 'features':{'customHabits':True,'swimming':True,'coach':True}})
+                elif self.path == '/v2/coach':
+                    return self.respond(200, coach.snapshot(user))
                 elif self.path == '/v2/garmin/activities':
                     return self.respond(200, watches.data(user))
                 elif self.path.startswith('/v2/garmin/jobs/'):

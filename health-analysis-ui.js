@@ -1,5 +1,5 @@
-import {healthMetrics,healthPeriod,healthSummary,metricValue,formatHealth} from './health-analysis.js?v=0.10.0';
-import {dayKey} from './progress.js?v=0.10.0';
+import {healthMetrics,healthPeriod,healthSummary,metricValue,formatHealth} from './health-analysis.js?v=0.11.0';
+import {dayKey} from './progress.js?v=0.11.0';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const dateLabel=day=>new Intl.DateTimeFormat('ru',{day:'numeric',month:'short'}).format(new Date(day+'T12:00:00'));
@@ -11,7 +11,7 @@ export function setupHealthAnalysis({onNavigate}){
   $('garmin-analysis-period').addEventListener('change',()=>{days=Number($('garmin-analysis-period').value);try{localStorage.setItem('my-character-garmin-period',String(days));}catch{}render();});
   function chooseTab(tab){
     for(const button of document.querySelectorAll('[data-progress-tab]')){const active=button.dataset.progressTab===tab;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;}
-    for(const name of ['activities','garmin','friends'])$('progress-'+name).hidden=tab!==name;
+    for(const name of ['activities','garmin','friends','coach'])$('progress-'+name).hidden=tab!==name;
   }
   for(const button of document.querySelectorAll('[data-progress-tab]'))button.addEventListener('click',()=>{chooseTab(button.dataset.progressTab);render();});
   document.querySelector('.progress-tabs').addEventListener('keydown',event=>{
