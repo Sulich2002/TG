@@ -21,4 +21,52 @@
 .daily-task .daily-label{min-width:0}.daily-task .daily-label b{overflow-wrap:anywhere}.habits-heading-actions{display:flex;align-items:center;gap:12px}.habits-manage{min-height:44px;padding:8px 11px;border:1px solid #43546d;border-radius:10px;background:#1c293b;color:#ffd0a6;font:inherit;font-size:11px}.habit-manager-row{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid #35465d}.habit-manager-row>span{min-width:0}.habit-manager-row b{display:block;font-size:12px;overflow-wrap:anywhere}.habit-manager-row small{display:block;font-size:9px;color:#9ab1cd;margin-top:7px}.habit-manager-row button{flex-shrink:0;font-size:11px}#habit-title{margin:20px 0;font-size:22px}#habit-form{margin-top:25px}#habit-removed{margin-top:26px;font-size:12px;color:#b8cce2}#habit-error{font-size:11px;color:#ffacaf}
 
 .progress-tabs{grid-template-columns:repeat(4,minmax(0,1fr))}.coach-home-link{width:100%;display:flex;gap:13px;align-items:center;text-align:left;border:1px solid #4a5d70;background:linear-gradient(110deg,#213648,#202d3e);border-radius:14px;padding:17px 14px;color:#c5dbed;font:inherit;margin:22px 0}.coach-home-link svg{width:25px;height:25px;flex-shrink:0;color:#b9dbc9}.coach-home-link span{flex:1;min-width:0}.coach-home-link b{display:block;font-size:13px}.coach-home-link small{display:block;font-size:9px;color:#9eb4c8;margin-top:7px;line-height:1.6}.coach-home-link i{font-size:23px;font-style:normal}.coach-goal-card{padding:16px;background:#1b2a39;border:1px solid #3a5264;border-radius:13px;margin:15px 0}.coach-goal-card .section-heading{margin:0}.coach-goal-card h3{font-size:13px;margin:0}.coach-goal-card p{font-size:12px;line-height:1.8;color:#b9cedd;white-space:pre-wrap;overflow-wrap:anywhere}.coach-picker{margin:24px 0 17px}.coach-picker .section-heading{gap:12px;margin-bottom:10px}.coach-picker label{font-size:12px}.coach-picker .section-heading select{width:auto;max-width:140px;font-size:12px}#coach-workout{font-size:13px;text-overflow:ellipsis}.coach-prompts{display:flex;flex-wrap:wrap;gap:8px;margin:17px 0}.coach-prompts button{padding:11px 12px;min-height:44px;border-radius:18px;background:#28362f;border:1px solid #466555;color:#bde3cf;font:inherit;font-size:11px}.coach-welcome{padding:27px 18px;text-align:center;color:#91aebe;border:1px dashed #3d5767;border-radius:14px;margin:22px 0}.coach-welcome svg{width:30px;height:30px}.coach-welcome h3{font-size:16px;color:#d6e7ef}.coach-welcome p{font-size:12px;line-height:1.8}.coach-message{border:1px solid #374c5e;background:#1b2a39;border-radius:16px 16px 16px 4px;margin:15px 0;padding:16px;overflow-wrap:anywhere}.coach-message-header{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-bottom:12px}.coach-message-header b{font-size:11px;color:#acd8c0}.coach-message-header time{font-size:9px;color:#91a5b9}.coach-message p{font-size:13px;line-height:1.8;white-space:pre-wrap;margin:7px 0;color:#d2deeb}.coach-user{background:#302d29;border-color:#66513f;border-radius:16px 16px 4px 16px;margin-left:22px}.coach-user .coach-message-header b{color:#ffd0a6}.coach-answer-line:has(br:only-child){line-height:.5}textarea{width:100%;min-height:100px;resize:vertical;background:#182330;color:#edf3fa;border:1px solid #44576e;border-radius:11px;padding:13px;font:inherit;font-size:16px;line-height:1.6}#coach-form{margin-top:23px}#coach-form .primary-button{min-height:48px}#coach-status,.coach-pending{font-size:12px;color:#b4ccdf;line-height:1.8;overflow-wrap:anywhere}.coach-pending{border-left:3px solid #a2cbb4;padding-left:12px}.coach-check{display:flex;align-items:flex-start;gap:11px;font-size:12px;line-height:1.8;margin-top:23px}.coach-check input{width:19px;height:19px;min-height:19px;flex-shrink:0;accent-color:#a6d6bc;margin:3px 0 0}.coach-connect-steps{padding-left:21px;font-size:12px;line-height:1.9;color:#b1c4d6}.coach-connect-steps li{margin:14px 0}.coach-connect-steps a{color:#aedcc3}.coach-error{color:#ffacaf;font-size:12px;line-height:1.7}.coach-discuss{display:block;border:0;background:transparent;color:#aedac5;font:inherit;font-size:10px;padding:12px 0 3px;text-align:left;min-height:38px}#coach-settings-dialog h2,#coach-provider-dialog h2{font-size:23px;margin-top:25px}#coach-provider{margin-top:12px}#coach-body{padding-bottom:15px}@media(max-width:360px){.progress-tabs button{padding-left:5px;padding-right:5px;font-size:11px}.coach-message{padding:13px}.coach-message-header{flex-wrap:wrap}.coach-picker .section-heading select{max-width:125px}.coach-goal-card{padding:14px}}
-#coach-messages{max-height:65dvh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#5f7d89 transparent}
+#coach-messages{max-height:none;overflow:visible}
+
+
+/* Softer mint controls and calmer surfaces. */
+:root{--accent:#b3dfcf;--control-fill:#253a35;--control-line:#476459;--control-text:#cee9df}
+button{touch-action:manipulation;transition:background-color .16s ease,border-color .16s ease,box-shadow .16s ease,transform .12s ease}
+button:active:not(:disabled){transform:translateY(1px)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.primary-button,.secondary-button{min-height:50px;border-radius:16px;background:linear-gradient(135deg,#c3e8da,#a8d7c7);color:#17382c;box-shadow:0 5px 17px #030d0a25;font-weight:700;font-size:13px}
+.primary-button:disabled{box-shadow:none;opacity:.5}
+.garmin-action-button,.habits-manage,.profile-edit,.outline-add,.show-achievements{border-color:#3e554f;background:#20322e;color:var(--control-text);border-radius:12px;min-height:44px}
+.habits-manage{padding:9px 13px;font-size:11px}
+.garmin-link,.health-analysis-link,.coach-discuss{color:#b4dccc}
+.small-add{width:44px;height:44px;flex-shrink:0;border-radius:14px;background:#263c34;border-color:#476255;color:#c7e8d8}
+.character-summary{background:linear-gradient(120deg,#23352f,#1b2830);border-color:#3c5049;border-radius:19px;box-shadow:0 8px 24px #02090818}
+.mini-avatar{background:#b3dfcf12;border-color:#b3dfcf30;color:#d3eee3}
+.character-summary small{color:#a6beb4}
+.daily-task{background:#1b2631;border-color:#2f3d48;border-radius:17px}
+.task-symbol{background:#b3dfcf0e;color:#b9dece;border-radius:13px}
+.task-end>b{color:#bbdacb}
+.daily-task.done{background:#1e3029;border-color:#456050}
+.bonus-card{background:#2b2922;border-color:#5c5340;border-radius:16px}
+.bonus-card>strong,.bonus-icon{color:#dcc597}
+.bonus-card small{color:#b4aa95}
+.coach-home-link{padding:15px 14px;background:#192b2a;border-color:#334e46;border-radius:17px;box-shadow:none;margin:24px 0}
+.coach-home-link svg{width:42px;height:42px;padding:10px;background:#b3dfcf0c;border:1px solid #b3dfcf1f;border-radius:13px;color:#bee2d1}
+.coach-home-link b{color:#d3e8de;font-size:13px}
+.coach-home-link small{font-size:10px;color:#91b3a5}
+.coach-home-link i{color:#85ad9b}
+.workout-options{gap:11px}
+.workout-options button{background:#1b2732;border-color:#33434d;border-radius:18px;padding:21px 17px;box-shadow:0 4px 16px #040b0c15}
+.workout-options button>span{color:#aed6c5;font-size:12px}
+.workout-options b{font-size:17px;color:#e0eae5}
+.workout-options small{font-size:10px;color:#99b0ad;line-height:1.6}
+.workout-options i{color:#8bb2a2}
+.progress-tabs{background:#151f29;border-color:#33443f;border-radius:16px;padding:5px}
+.progress-tabs button{border-radius:11px}
+.progress-tabs button.active{background:#2c433a;color:#dbefe3;box-shadow:0 2px 7px #0002}
+.bottom-nav{background:#141e27f5;border-color:#32483f}
+.bottom-nav button.active{color:var(--accent)}
+.bottom-nav .active:before{background:var(--accent);box-shadow:0 3px 12px #b3dfcf35;width:25px}
+.history-filters button.active,.achievement-filters button.active,.health-metric-picker button.active,.friends-periods button.active{background:#263d32;border-color:#52715e;color:#d1ead9}
+.coach-prompts button{border-radius:13px;background:#22372f;border-color:#3c594a;color:#c2e1cf}
+.coach-goal-card{background:#1b2b2d;border-color:#36504a;border-radius:17px}
+.coach-user{background:#26382f;border-color:#48624f}
+.coach-user .coach-message-header b{color:#c2e4cf}
+#toast{background:#d2ebdc;color:#233f2f;border:1px solid #a7c7b2;box-shadow:0 8px 30px #0003}
+.field-hint{font-size:10px;line-height:1.75}
+@media(hover:hover){.primary-button:hover:not(:disabled){box-shadow:0 5px 20px #9bcbb522}.daily-task:hover:not(:disabled),.workout-options button:hover{border-color:#5e7d6f}.garmin-action-button:hover:not(:disabled),.habits-manage:hover{background:#2b4439}}

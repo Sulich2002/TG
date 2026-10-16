@@ -1,5 +1,5 @@
-import {garminURL} from './garmin.js?v=0.11.0';
-import {normalize,dayKey,shiftDay,workoutTypes,workoutDescription,formatXP} from './progress.js?v=0.11.0';
+import {garminURL} from './garmin.js?v=0.11.1';
+import {normalize,dayKey,shiftDay,workoutTypes,workoutDescription,formatXP} from './progress.js?v=0.11.1';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const errors={account_required:'Войди в аккаунт приложения заново.',not_found:'Обнови коннектор на сервере, чтобы включить тренера.',coach_not_configured:'Владелец группы ещё не подключил ИИ.',coach_consent_required:'Сначала разреши передачу данных в настройках тренера.',coach_busy:'Тренер ещё обрабатывает запрос. Подожди немного.',coach_daily_limit:'Лимит сообщений на сегодня исчерпан. Он обновится завтра по московскому времени.',coach_quota:'Бесплатная квота Groq временно исчерпана. Попробуй позже; платный сервис не подключается.',coach_key_invalid:'Groq не принял ключ. Владельцу нужно проверить подключение.',coach_key_format:'Нужен ключ Groq, начинающийся с gsk_, и подтверждение бесплатного тарифа.',coach_model_unavailable:'Доступная модель не найдена. Проверь доступ к моделям в аккаунте Groq.',coach_unavailable:'ИИ сейчас не ответил. Текст сохранён в поле — можно повторить отправку.',coach_workout_missing:'Тренировка недоступна в контексте. Выбери запись за последние 30 дней.',coach_conflict:'Разговор изменился на другом устройстве. История обновлена, твой текст остался в поле.',coach_request_conflict:'Это сообщение уже отправлялось с другим содержимым. Измени текст и отправь снова.',coach_message_invalid:'Напиши сообщение длиной до 2000 символов.',coach_settings_invalid:'Проверь цель и дату события.',owner_required:'Подключение ИИ настраивает владелец группы.',invalid_progress:'Проверь дневник: не удалось прочитать одну из записей.'};
@@ -10,7 +10,7 @@ export function coachWorkouts(state,remote=[],days=7,today=dayKey()){
  return [...map.values()].filter(r=>typeof r.day==='string'&&r.day>=start&&r.day<=today).sort((a,b)=>b.day.localeCompare(a.day)||a.id.localeCompare(b.id)).slice(0,100);
 }
 export function setupCoach({getState,onNavigate,onDialog,notify}){
- let data=null,busy=false,loading=false,retry=null,selected='',ready=false;
+ let data=null,busy=false,loading=false,retry=null,selected='',ready=false,renderedMessages=[];
  function account(){try{const raw=JSON.parse(localStorage.getItem('my-character-account-v1'));if(typeof raw?.token==='string'&&typeof raw.id==='string')return {...raw,url:garminURL(raw.url)};}catch{}return null;}
  async function request(path,body){
   const settings=account();if(!settings)throw new Error('Для личного чата войди в аккаунт приложения.');
@@ -23,7 +23,7 @@ export function setupCoach({getState,onNavigate,onDialog,notify}){
  const status=text=>{$('coach-status').textContent=text;};
  function renderPicker(){
   const days=Number($('coach-period').value),rows=coachWorkouts(getState(),data?.workouts||[],days),select=$('coach-workout');
-  select.replaceChildren(node('option','Без отдельной тренировки'));select.firstElementChild.value='';
+  select.replaceChildren(node('option','Общий вопрос тренеру'));select.firstElementChild.value='';
   for(const row of rows){const label=new Intl.DateTimeFormat('ru',{day:'numeric',month:'short'}).format(new Date(row.day+'T12:00:00'))+' · '+(row.title||workoutTypes[row.type])+(row.description?' · '+row.description:row.minutes?' · '+formatXP(row.minutes)+' мин':'')+(row.possibleDuplicate?' · возможный дубль':'');const option=node('option',label);option.value=row.id;select.append(option);}
   if(rows.some(r=>r.id===selected))select.value=selected;else{selected='';select.value='';}
   $('coach-workout-note').textContent=selected?'Тренер получит данные выбранного занятия вместе с контекстом недели.':rows.length?'Выбери занятие, чтобы обсудить его, или задай общий вопрос.':'За этот период нет записанных занятий. Можно обсудить цель или начать с вопроса.';
@@ -32,12 +32,13 @@ export function setupCoach({getState,onNavigate,onDialog,notify}){
   for(const line of text.split('\n')){const p=node('p',null,'coach-answer-line');const cleanLine=line.replace(/^#{1,6}\s+/,'');const parts=cleanLine.split(/(\*\*[^*\n]+\*\*)/g);for(const part of parts)p.append(part.startsWith('**')&&part.endsWith('**')?node('strong',part.slice(2,-2)):document.createTextNode(part));if(!cleanLine)p.append(document.createElement('br'));container.append(p);}
  }
  function renderMessages(){
-  const container=$('coach-messages'),position=container.scrollTop,atEnd=container.scrollHeight-position-container.clientHeight<40;container.replaceChildren();
-  for(const record of data?.messages||[]){
+  const records=data?.messages||[],signatures=records.map(record=>JSON.stringify(record)),samePrefix=signatures.length>=renderedMessages.length&&renderedMessages.every((signature,index)=>signature===signatures[index]);
+  if(samePrefix&&signatures.length===renderedMessages.length)return;
+  const container=$('coach-messages'),start=samePrefix?renderedMessages.length:0;if(!samePrefix)container.replaceChildren();renderedMessages=signatures;
+  for(const record of records.slice(start)){
    for(const [role,text] of [['user',record.question],['assistant',record.answer]]){const article=node('article',null,'coach-message coach-'+role),header=node('div',null,'coach-message-header');header.append(node('b',role==='user'?'Ты':'Тренер · Groq'));if(Number.isFinite(record.created))header.append(node('time',new Intl.DateTimeFormat('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(record.created*1000))));article.append(header);if(role==='user')article.append(node('p',text));else appendAnswer(article,text);container.append(article);}
   }
   $('coach-welcome').hidden=Boolean(data?.messages.length);
-  container.scrollTop=atEnd?container.scrollHeight:position;
  }
  function render(){
   const signed=Boolean(account());$('coach-login').hidden=signed;$('coach-body').hidden=!signed;$('coach-provider').hidden=!data?.owner;
@@ -77,7 +78,7 @@ export function setupCoach({getState,onNavigate,onDialog,notify}){
   const attempted={...retry};busy=true;render();status('Тренер смотрит записи и готовит ответ…');
   try{data=await request('/message',{...attempted,revision:data.revision,state:getState()});ready=true;if($('coach-text').value.trim()===text)$('coach-text').value='';retry=null;status('Ответ готов.');}
   catch(error){status(error.message);if(error.code==='coach_conflict'){busy=false;await refresh();status(errors.coach_conflict);}if(error.code==='coach_request_conflict')retry=null;}
-  finally{busy=false;render();if(!retry)$('coach-messages').lastElementChild?.scrollIntoView({block:'end',behavior:'smooth'});}
+  finally{busy=false;render();}
  });
  $('coach-clear').addEventListener('click',()=>{$('coach-clear-confirm').hidden=false;});$('coach-clear-no').addEventListener('click',()=>{$('coach-clear-confirm').hidden=true;});
  $('coach-clear-yes').addEventListener('click',async()=>{if(busy)return;busy=true;render();try{data=await request('/clear',{});retry=null;$('coach-clear-confirm').hidden=true;status('История чата удалена. Дневник и цель сохранены.');}catch(error){status(error.message);}finally{busy=false;render();}});

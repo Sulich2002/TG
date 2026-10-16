@@ -1,8 +1,8 @@
-import {setupCoach} from './coach-ui.js?v=0.11.0';
-import {setupFriends} from './friends-ui.js?v=0.11.0';
-import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.11.0';
-import {normalizeProfile} from './profile.js?v=0.11.0';
-import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.11.0';
+import {setupCoach} from './coach-ui.js?v=0.11.1';
+import {setupFriends} from './friends-ui.js?v=0.11.1';
+import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.11.1';
+import {normalizeProfile} from './profile.js?v=0.11.1';
+import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.11.1';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
 let friends,coach;
@@ -176,7 +176,7 @@ function renderPlans(){
 async function ensureAvatar(){
   if(avatar){avatar.setLevel(levelProgress(totalXP(state)).level);avatar.setActive(true);return;}
   if(avatarPromise)return;
-  avatarPromise=import('./avatar.js?v=0.11.0').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
+  avatarPromise=import('./avatar.js?v=0.11.1').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
 }
 $('add-plan').addEventListener('click',()=>{$('plan-form').reset();$('plan-error').textContent='';$('plan-dialog').showModal();updateBack();});
 $('close-plan').addEventListener('click',()=>$('plan-dialog').close());$('plan-dialog').addEventListener('close',updateBack);
