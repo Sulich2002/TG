@@ -1,7 +1,8 @@
-import {mergeHealthHistory} from './health-analysis.js?v=0.8.1';
-import {setupHealthAnalysis} from './health-analysis-ui.js?v=0.8.1';
-import {garminURL,garminRequest} from './garmin.js?v=0.8.1';
-import {garminCandidates,importGarmin,dayKey,workoutDescription,workoutXP,formatXP} from './progress.js?v=0.8.1';
+import {setupAccountGarmin} from './garmin-account.js?v=0.9.0';
+import {mergeHealthHistory} from './health-analysis.js?v=0.9.0';
+import {setupHealthAnalysis} from './health-analysis-ui.js?v=0.9.0';
+import {garminURL,garminRequest} from './garmin.js?v=0.9.0';
+import {garminCandidates,importGarmin,dayKey,workoutDescription,workoutXP,formatXP} from './progress.js?v=0.9.0';
 const $=id=>document.getElementById(id),storageKey='my-character-garmin-v1';
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 
@@ -20,14 +21,19 @@ export function appendGarminDetails(container,source){
 }
 
 export function setupGarmin({getState,persist,notify,getProfile,onImport,onDialog,onNavigate}){
-  let settings=null,busy=false,generation=0,preview=[],payload=[],stopped=false,health=[],healthDay;
-  try{const saved=JSON.parse(localStorage.getItem(storageKey));if(saved&&typeof saved.token==='string'&&/^[A-Za-z0-9_-]{20,128}$/.test(saved.token)){settings={url:garminURL(saved.url),token:saved.token,knownIds:Array.isArray(saved.knownIds)?saved.knownIds.filter(id=>typeof id==='string').slice(-5000):[],initialReviewed:saved.initialReviewed===true,automatic:saved.automatic===true,connectedDay:/^\d{4}-\d{2}-\d{2}$/.test(saved.connectedDay)?saved.connectedDay:dayKey()};}}catch{}
-  try{const saved=JSON.parse(localStorage.getItem('my-character-garmin-health-v1'));if(settings&&saved?.url===settings.url)health=mergeHealthHistory([],Array.isArray(saved.rows)?saved.rows.slice(0,120):[],dayKey());}catch{}
+  let settings=null,busy=false,generation=0,preview=[],payload=[],stopped=false,health=[],healthDay,connected=false,legacyFallback=false;
+  try{const saved=JSON.parse(localStorage.getItem(storageKey));if(saved&&typeof saved.token==='string'&&/^[A-Za-z0-9_-]{20,128}$/.test(saved.token)){settings={url:garminURL(saved.url),token:saved.token,knownIds:Array.isArray(saved.knownIds)?saved.knownIds.filter(id=>typeof id==='string').slice(-5000):[],initialReviewed:saved.initialReviewed===true,automatic:saved.automatic===true,mode:saved.mode,scope:saved.scope,connectionId:saved.connectionId,connected:saved.connected===true,connectedDay:/^\d{4}-\d{2}-\d{2}$/.test(saved.connectedDay)?saved.connectedDay:dayKey()};}}catch{}
+  const previous=settings;
+  const accountClient=setupAccountGarmin({onDialog,notify,onConnected:async()=>{generation++;busy=false;connected=true;settings={...settings,connected:true,initialReviewed:false,automatic:true};save(settings);render();await poll(true);}});
+  if(accountClient){const {account}=accountClient;const same=settings?.scope===account.id||(account.owner&&settings?.url===account.url&&!settings?.scope);settings={url:account.url,token:account.token,scope:account.id,mode:'account',knownIds:same?settings.knownIds:[],initialReviewed:same?settings.initialReviewed:false,automatic:same?settings.automatic:true,connectedDay:same?settings.connectedDay:dayKey(),connectionId:same?settings.connectionId:null,connected:same&&settings.connected===true};connected=settings.connected;}
+  else connected=Boolean(settings);
+  const isConnected=()=>Boolean(settings)&&connected;
+  try{const saved=JSON.parse(localStorage.getItem('my-character-garmin-health-v1'));if(settings&&saved?.url===settings.url&&(!accountClient||saved.scope===settings.scope||(accountClient.account.owner&&!saved.scope)))health=mergeHealthHistory([],Array.isArray(saved.rows)?saved.rows.slice(0,120):[],dayKey());}catch{}
   const analysis=setupHealthAnalysis({onNavigate});
   $('garmin-analysis-open').addEventListener('click',()=>analysis.open('sleep',healthDay));
   function renderHealth(){
-    analysis.update(health,Boolean(settings));
-    $('garmin-health').hidden=!settings||!health.length;if(!settings||!health.length)return;
+    analysis.update(health,isConnected());
+    $('garmin-health').hidden=!isConnected()||!health.length;if(!isConnected()||!health.length)return;
     if(!health.some(item=>item.day===healthDay))healthDay=health[0].day;
     const current=health.find(item=>item.day===healthDay),fmt=new Intl.NumberFormat('ru',{maximumFractionDigits:0});
     $('garmin-health-day').replaceChildren(...health.map(item=>{const option=node('option',new Intl.DateTimeFormat('ru',{day:'numeric',month:'short'}).format(new Date(item.day+'T12:00:00')));option.value=item.day;return option;}));$('garmin-health-day').value=healthDay;
@@ -42,13 +48,13 @@ export function setupGarmin({getState,persist,notify,getProfile,onImport,onDialo
     $('garmin-health-updated').textContent=(current.warnings.length?'Часть данных временно недоступна. ':'')+(current.updated?`Данные Garmin от ${new Intl.DateTimeFormat('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(current.updated))}. `:'')+'Пустое значение означает, что данных пока нет. Эти показатели не дают XP.';
   }
   $('garmin-health-day').addEventListener('change',()=>{healthDay=$('garmin-health-day').value;renderHealth();});
-  function save(next){try{if(next)localStorage.setItem(storageKey,JSON.stringify(next));else localStorage.removeItem(storageKey);}catch{throw new Error('Не удалось сохранить подключение на устройстве');}settings=next;}
+  function save(next){const stored=legacyFallback&&previous&&next?.mode==='account'?{...next,url:previous.url,token:previous.token,mode:previous.mode,scope:previous.scope}:next;try{if(next)localStorage.setItem(storageKey,JSON.stringify(stored));else localStorage.removeItem(storageKey);}catch{throw new Error('Не удалось сохранить подключение на устройстве');}settings=next;}
   function status(text){$('garmin-status').textContent=text;}
   function render(){
-    $('garmin-connect').textContent=settings?'Изменить подключение':'Подключить';
-    $('garmin-refresh').hidden=!settings;$('garmin-disconnect').hidden=!settings;
+    $('garmin-connect').textContent=isConnected()?'Войти в Garmin заново':'Подключить Garmin';
+    $('garmin-refresh').hidden=!isConnected();$('garmin-disconnect').hidden=!isConnected();
     $('garmin-refresh').disabled=busy;
-    if(!settings)status('Записи с часов: дистанция, время, темп и пульс.');
+    if(!settings)status('Подключи свои часы: занятия, сон, пульс и другие доступные показатели.');
     renderHealth();
   }
   function mark(ids){const next={...settings,knownIds:[...new Set([...settings.knownIds,...ids])].slice(-5000)};save(next);}
@@ -70,10 +76,18 @@ export function setupGarmin({getState,persist,notify,getProfile,onImport,onDialo
     if(!settings||busy||!getProfile()||stopped)return;
     const ticket=generation,current=settings;busy=true;render();status('Проверяю записи Garmin…');
     try{
-      const result=await garminRequest(current.url,'/v1/activities',{token:current.token});
+      let result;
+      if(accountClient){try{result=await accountClient.activities();legacyFallback=false;}
+        catch(error){if(accountClient.account.owner&&previous?.mode!=='account'&&previous?.token&&['not_found','unauthorized'].includes(error.code)){result=await garminRequest(previous.url,'/v1/activities',{token:previous.token});legacyFallback=true;result.connected=true;}else throw error;}
+      }else result=await garminRequest(current.url,'/v1/activities',{token:current.token});
+      if(ticket!==generation||stopped)return;
+      connected=accountClient?result.connected===true:true;
+      if(!connected){health=[];try{localStorage.removeItem('my-character-garmin-health-v1');}catch{}renderHealth();status('Garmin пока не подключён. Нажми «Подключить Garmin».');return;}
+      if(accountClient&&result.connectionId){if(settings.connectionId&&settings.connectionId!==result.connectionId){settings.knownIds=[];settings.initialReviewed=false;health=[];}settings.connectionId=result.connectionId;settings.connected=true;save(settings);}
+
       if(ticket!==generation||stopped)return;
       if(!Array.isArray(result.activities)||result.activities.length>100)throw new Error('Garmin-сервис вернул неожиданный ответ');
-      if(Array.isArray(result.health)){health=mergeHealthHistory(health,result.health.slice(0,120),dayKey());try{localStorage.setItem('my-character-garmin-health-v1',JSON.stringify({url:settings.url,rows:health}));}catch{}renderHealth();}
+      if(Array.isArray(result.health)){health=mergeHealthHistory(health,result.health.slice(0,120),dayKey());try{localStorage.setItem('my-character-garmin-health-v1',JSON.stringify({url:settings.url,scope:settings.scope,rows:health}));}catch{}renderHealth();}
       if(review){showPreview(result.activities);return;}
       if(!settings.initialReviewed){status('Подключено. Нажми «Новые занятия», чтобы выбрать записи для первого импорта.');return;}
       const known=new Set(settings.knownIds),candidates=garminCandidates(getState(),result.activities).filter(item=>!known.has(item.id));
@@ -83,12 +97,12 @@ export function setupGarmin({getState,persist,notify,getProfile,onImport,onDialo
         mark(automatic.map(item=>item.id));
       }
       const pending=candidates.length-automatic.length;
-      const errors={login_required:'На сервере нужен повторный вход в Garmin',rate_limited:'Garmin ограничил запросы; сервер повторит позже',unavailable:'Garmin временно недоступен; показаны последние загруженные записи'};
+      const errors={login_required:accountClient?'Нужно войти в Garmin заново через кнопку подключения':'На сервере нужен повторный вход в Garmin',rate_limited:'Garmin ограничил запросы; сервер повторит позже',unavailable:'Garmin временно недоступен; показаны последние загруженные записи'};
       status(errors[result.syncError]||(pending?`Есть ${pending} записей для проверки. Нажми «Новые занятия».`:result.lastSync?`Обновлено: ${new Intl.DateTimeFormat('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(result.lastSync))}`:'Сервер ещё не загрузил занятия'));
     }catch(error){if(ticket===generation)status(error instanceof TypeError?'Не удалось связаться с Garmin-сервисом. Проверь его адрес и работу сервера.':error.message);}
     finally{if(ticket===generation){busy=false;render();}}
   }
-  $('garmin-connect').addEventListener('click',()=>{$('garmin-form').reset();$('garmin-url').value=settings?.url||'';$('garmin-error').textContent='';$('garmin-dialog').showModal();onDialog();});
+  $('garmin-connect').addEventListener('click',()=>{if(accountClient){accountClient.open();return;}$('garmin-form').reset();$('garmin-url').value=settings?.url||'';$('garmin-error').textContent='';$('garmin-dialog').showModal();onDialog();});
   $('close-garmin').addEventListener('click',()=>$('garmin-dialog').close());
   $('garmin-dialog').addEventListener('close',()=>{$('garmin-password').value='';onDialog();});
   $('garmin-form').addEventListener('submit',async event=>{
@@ -103,14 +117,15 @@ export function setupGarmin({getState,persist,notify,getProfile,onImport,onDialo
       const previous=settings;
       save({url,token:newToken,knownIds:previous?.url===url?previous.knownIds:[],initialReviewed:false,automatic:true,connectedDay:previous?.url===url?previous.connectedDay:dayKey()});
       if(previous?.url!==url){health=[];try{localStorage.removeItem('my-character-garmin-health-v1');}catch{}}
-      generation++;busy=false;$('garmin-dialog').close();render();await poll(true);
+      generation++;busy=false;connected=true;$('garmin-dialog').close();render();await poll(true);
       if(previous)garminRequest(previous.url,'/v1/logout',{method:'POST',token:previous.token}).catch(()=>{});
     }catch(error){if(newToken&&settings?.token!==newToken)garminRequest(url,'/v1/logout',{method:'POST',token:newToken}).catch(()=>{});$('garmin-error').textContent=error instanceof TypeError?'Сервис не отвечает. Проверь HTTPS-адрес.':error.message;}
     finally{button.disabled=false;$('garmin-password').value='';}
   });
   $('garmin-refresh').addEventListener('click',()=>poll(true));
-  $('garmin-disconnect').addEventListener('click',()=>{
-    const previous=settings;try{save(null);localStorage.removeItem('my-character-garmin-health-v1');}catch(error){notify(error.message);return;}generation++;busy=false;health=[];render();
+  $('garmin-disconnect').addEventListener('click',async()=>{
+    if(accountClient&&!legacyFallback){try{await accountClient.disconnect();generation++;busy=false;connected=false;health=[];settings={...settings,connected:false};save(settings);localStorage.removeItem('my-character-garmin-health-v1');render();status('Garmin отключён. Можно подключиться заново.');notify('Garmin отключён. Дневник занятий сохранён.');}catch(error){notify(error.message);}return;}
+    const previous=settings;try{save(null);localStorage.removeItem('my-character-garmin-health-v1');}catch(error){notify(error.message);return;}generation++;busy=false;connected=false;health=[];render();
     if(previous)garminRequest(previous.url,'/v1/logout',{method:'POST',token:previous.token}).catch(()=>{});
     notify('Подключение на этом устройстве удалено. Записи в дневнике сохранены.');
   });

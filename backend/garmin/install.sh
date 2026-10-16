@@ -50,7 +50,7 @@ packed = base64.b64decode("@TG_BUNDLE_B64@", validate=True)
 if hashlib.sha256(packed).hexdigest() != sys.argv[2]:
     raise SystemExit('Контрольная сумма установщика не совпала. Установка остановлена.')
 files = json.loads(gzip.decompress(packed))
-allowed = {'api.py','core.py','health.py','accounts.py','rewards.json','connector.py','requirements.txt','requirements-uv.txt'}
+allowed = {'api.py','core.py','health.py','accounts.py','user_garmin.py','rewards.json','connector.py','requirements.txt','requirements-uv.txt'}
 if set(files) != allowed or not all(isinstance(v,str) for v in files.values()):
     raise SystemExit('Неподходящие файлы в установщике.')
 target = Path(sys.argv[1]); target.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -70,11 +70,20 @@ if [[ "$tg_update" == true ]]; then
   tg_stage=$(mktemp -d "$tg_root/update.XXXXXX")
   mkdir "$tg_stage/next"
   cp -a "$tg_root/app/." "$tg_stage/next/"
-  for tg_file in api.py core.py health.py accounts.py rewards.json connector.py requirements.txt requirements-uv.txt; do
+  for tg_file in api.py core.py health.py accounts.py user_garmin.py rewards.json connector.py requirements.txt requirements-uv.txt; do
     [[ ! -L "$tg_stage/next/$tg_file" ]] || { echo 'Symlink in Garmin installation.' >&2; exit 1; }
     install -m 0644 "$tg_temp/source/$tg_file" "$tg_stage/next/$tg_file"
   done
   tg_timer_active=false; tg_api_active=false
+  tg_api_unit=/etc/systemd/system/tg-garmin-api.service
+  tg_limit_update=false
+  if [[ -f "$tg_api_unit" ]]; then
+    [[ ! -L "$tg_api_unit" ]] || { echo 'Symlink in API service.' >&2; exit 1; }
+    if [[ $(sed -n 's/^MemoryMax=//p' "$tg_api_unit") == 128M ]]; then
+      cp -p "$tg_api_unit" "$tg_stage/api-unit.previous"
+      tg_limit_update=true
+    fi
+  fi
   if systemctl is-active --quiet tg-garmin-sync.timer; then tg_timer_active=true; fi
   if systemctl is-active --quiet tg-garmin-api.service; then tg_api_active=true; fi
   tg_swapped=false
@@ -88,6 +97,10 @@ if [[ "$tg_update" == true ]]; then
       fi
       mv "$tg_stage/previous" "$tg_root/app"
     fi
+    if [[ "$tg_limit_update" == true ]]; then
+      cp -p "$tg_stage/api-unit.previous" "$tg_api_unit"
+      systemctl daemon-reload || true
+    fi
     if [[ "$tg_api_active" == true ]]; then systemctl start tg-garmin-api.service || true; fi
     if [[ "$tg_timer_active" == true ]]; then systemctl start tg-garmin-sync.timer || true; fi
     echo 'Update failed; previous Garmin code restored. VPN unchanged.' >&2
@@ -98,6 +111,10 @@ if [[ "$tg_update" == true ]]; then
   mv "$tg_root/app" "$tg_stage/previous"
   mv "$tg_stage/next" "$tg_root/app"
   tg_swapped=true
+  if [[ "$tg_limit_update" == true ]]; then
+    sed -i 's/^MemoryMax=128M$/MemoryMax=384M/' "$tg_api_unit"
+    systemctl daemon-reload
+  fi
   if [[ "$tg_api_active" == true ]]; then systemctl start tg-garmin-api.service; fi
   if [[ "$tg_timer_active" == true ]]; then systemctl start tg-garmin-sync.timer; fi
   printf '%s\n' "$tg_bundle_sha" > "$tg_root/source-sha256"
@@ -113,7 +130,7 @@ apt-get update -qq
 apt-get install -y --no-install-recommends ca-certificates curl python3-venv
 mkdir -p "$tg_root/app"
 touch "$tg_root/.diary-garmin"
-for tg_file in api.py core.py health.py accounts.py rewards.json connector.py requirements.txt requirements-uv.txt; do
+for tg_file in api.py core.py health.py accounts.py user_garmin.py rewards.json connector.py requirements.txt requirements-uv.txt; do
   [[ ! -L "$tg_root/app/$tg_file" ]] || { echo 'Нельзя перезаписать символьную ссылку.' >&2; exit 1; }
   install -m 0644 "$tg_temp/source/$tg_file" "$tg_root/app/$tg_file"
 done
@@ -148,7 +165,7 @@ exec /opt/tg-garmin/venv/bin/python /opt/tg-garmin/app/connector.py "$@"
 EOF
 chmod 0755 /usr/local/bin/tg-garmin
 for tg_component in api sync tunnel; do
-  case "$tg_component" in api) tg_command=serve; tg_type=simple; tg_memory=128M ;; sync) tg_command=sync; tg_type=oneshot; tg_memory=384M ;; tunnel) tg_command=tunnel; tg_type=simple; tg_memory=192M ;; esac
+  case "$tg_component" in api) tg_command=serve; tg_type=simple; tg_memory=384M ;; sync) tg_command=sync; tg_type=oneshot; tg_memory=384M ;; tunnel) tg_command=tunnel; tg_type=simple; tg_memory=192M ;; esac
   tg_unit="/etc/systemd/system/tg-garmin-$tg_component.service"
   if [[ -L "$tg_unit" ]]; then echo 'Файл службы оказался символьной ссылкой.' >&2; exit 1; fi
   cat > "$tg_unit" <<EOF

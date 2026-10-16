@@ -28,9 +28,11 @@ def token_digest(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN):
+def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN, garmin_service=None):
     from accounts import Accounts, AccountError
+    from user_garmin import UserGarmin
     accounts = Accounts(store, password_record, check_password, token_digest)
+    watches = garmin_service or UserGarmin(store)
     attempts = []
     lock = threading.Lock()
 
@@ -150,6 +152,14 @@ def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN):
                     body = json.loads(self.rfile.read(length), parse_constant=invalid_constant)
                     if not isinstance(body, dict):
                         raise AccountError('invalid_request')
+                    if self.path == '/v2/garmin/connect':
+                        return self.respond(200, watches.start(user, body.get('email'), body.get('password')))
+                    if self.path == '/v2/garmin/mfa':
+                        return self.respond(200, watches.mfa(user, body.get('job'), body.get('code')))
+                    if self.path == '/v2/garmin/cancel':
+                        return self.respond(200, watches.cancel(user, body.get('job')))
+                    if self.path == '/v2/garmin/disconnect':
+                        return self.respond(200, watches.disconnect(user))
                     if self.path in ('/v2/register', '/v2/create-group'):
                         return self.respond(200, accounts.register(body, owner=self.path == '/v2/create-group'))
                     if self.path == '/v2/login':
@@ -164,6 +174,10 @@ def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN):
                         return self.respond(200, {'ok': True})
                 elif self.path == '/v2/me':
                     return self.respond(200, {'account': accounts.snapshot(user)})
+                elif self.path == '/v2/garmin/activities':
+                    return self.respond(200, watches.data(user))
+                elif self.path.startswith('/v2/garmin/jobs/'):
+                    return self.respond(200, watches.get_job(user, self.path.rsplit('/',1)[1]).snapshot())
                 elif self.path in ('/v2/leaderboard/week','/v2/leaderboard/month'):
                     return self.respond(200, accounts.leaderboard(user, self.path.rsplit('/',1)[1]))
                 raise AccountError('not_found',404)

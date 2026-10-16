@@ -8,6 +8,9 @@ from pathlib import Path
 from accounts import validate_state, earned, AccountError
 from api import make_server, token_digest
 from core import Store
+from user_garmin import UserGarmin
+from test_user_garmin import FakeGarmin
+import time
 
 PROFILE={'name':'Антон','sex':'male','age':28,'height':180,'weight':80}
 PASSWORD='fixture-account-password'
@@ -22,7 +25,7 @@ class AccountTests(unittest.TestCase):
   self.temp=tempfile.TemporaryDirectory();self.store=Store(Path(self.temp.name)/'diary.sqlite3')
   with self.store.connect() as db:db.execute('INSERT INTO sessions VALUES (?,?)',(token_digest(OWNER_TOKEN),9999999999))
   self.clock=patch('accounts.today_key',return_value=TODAY);self.clock.start()
-  self.server=make_server(self.store,('127.0.0.1',0));self.worker=threading.Thread(target=self.server.serve_forever,daemon=True);self.worker.start()
+  self.server=make_server(self.store,('127.0.0.1',0),garmin_service=UserGarmin(self.store,FakeGarmin));self.worker=threading.Thread(target=self.server.serve_forever,daemon=True);self.worker.start()
  def tearDown(self):
   self.server.shutdown();self.server.server_close();self.worker.join();self.clock.stop();self.temp.cleanup()
  def req(self,path,body=None,token=None):
@@ -62,6 +65,21 @@ class AccountTests(unittest.TestCase):
  def test_unknown_login_dummy_password_and_bad_passwords_are_rejected(self):
   self.assertEqual(self.req('/v2/login',{'username':'absent','password':'dummy-login-password'})[0],401)
   self.assertEqual(self.req('/v2/create-group',{'username':'owner','password':PASSWORD,'profile':PROFILE,'state':state()})[0],403)
+ def test_personal_watch_http_mfa_and_job_ownership(self):
+  _,owner=self.register();_,friend=self.register('anton',owner['invite'])
+  status,job=self.req('/v2/garmin/connect',{'email':'mfa-first@fixture.invalid','password':'fixture-watch-password'},friend['token']);self.assertEqual(status,200)
+  path='/v2/garmin/jobs/'+job['job'];deadline=time.time()+3
+  while time.time()<deadline and self.req(path,token=friend['token'])[1]['phase']!='mfa':time.sleep(.01)
+  self.assertEqual(self.req(path,token=owner['token'])[0],404)
+  self.assertEqual(self.req('/v2/garmin/mfa',{'job':job['job'],'code':'123456'},owner['token'])[0],404)
+  self.assertEqual(self.req('/v2/garmin/mfa',{'job':job['job'],'code':'123456'},friend['token'])[0],200)
+  deadline=time.time()+3
+  while time.time()<deadline and self.req(path,token=friend['token'])[1]['phase']!='connected':time.sleep(.01)
+  personal=self.req('/v2/garmin/activities',token=friend['token'])[1]
+  self.assertTrue(personal['connected']);self.assertEqual(personal['activities'][0]['activityId'],'123')
+  self.assertFalse(self.req('/v2/garmin/activities',token=owner['token'])[1]['connected'])
+  self.assertEqual(self.req('/v2/garmin/disconnect',{},friend['token'])[0],200)
+  self.assertFalse(self.req('/v2/garmin/activities',token=friend['token'])[1]['connected'])
  def test_server_scores_volume_bonus_and_earned_achievements_without_trusting_xp(self):
   events=[task(TODAY,k) for k in ('warmup','shower','breakfast','reading')]
   events += [{'id':'run','kind':'workout','day':TODAY,'data':{'type':'run','day':TODAY,'distance':5,'minutes':30},'xp':99999,'xpRule':'volume-v1'}, {'id':'achievement:first-workout','kind':'achievement','day':TODAY,'achievement':'first-workout','xp':99999}, {'id':'achievement:run-marathon','kind':'achievement','day':TODAY,'achievement':'run-marathon','xp':99999}]

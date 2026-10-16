@@ -33,6 +33,7 @@ test('connector update preserves private state and tunnel, and restores code if 
    await mkdir(join(root,'app'),{recursive:true});await mkdir(join(root,'venv','bin'),{recursive:true});await mkdir(join(bundle,'source'),{recursive:true});await mkdir(bin);
    await writeFile(join(root,'.diary-garmin'),'fixture');await symlink(python,join(root,'venv','bin','python'));
    await writeFile(join(root,'private-state'),'fixture-only-session-and-tunnel-unchanged');
+   const unit=join(fixture,'tg-garmin-api.service');await writeFile(unit,'[Service]\nMemoryMax=128M\n');
    for(const [name,content]of Object.entries(source)){await writeFile(join(bundle,'source',name),content);await writeFile(join(root,'app',name),name.endsWith('.txt')?content:'# previous fixture code\n');}
    const systemctl=join(bin,'systemctl');await writeFile(systemctl,`#!/bin/bash
 set -eu
@@ -48,9 +49,10 @@ tg_root="$TG_UPDATE_FIXTURE/root"
 tg_temp="$TG_UPDATE_FIXTURE/bundle"
 tg_bundle_sha="$TG_UPDATE_SHA"
 tg_update=true
-${update}`],{encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,TG_UPDATE_FIXTURE:fixture,TG_UPDATE_SHA:sha}});
+${update.replace('/etc/systemd/system/tg-garmin-api.service',unit)}`],{encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,TG_UPDATE_FIXTURE:fixture,TG_UPDATE_SHA:sha}});
    assert.equal(result.status,fail?1:0,result.stderr);
    assert.equal(await readFile(join(root,'private-state'),'utf8'),'fixture-only-session-and-tunnel-unchanged');
+   assert.match(await readFile(unit,'utf8'),fail?/MemoryMax=128M/:/MemoryMax=384M/);
    assert.equal(await readFile(join(root,'app','health.py'),'utf8'),fail?'# previous fixture code\n':source['health.py']);
    const calls=await readFile(join(fixture,'log'),'utf8');assert.doesNotMatch(calls,/tunnel|xray|x-ui|ssh|firewall/);assert.match(calls,/start tg-garmin-sync.timer/);
    if(fail)assert.match(result.stderr,/previous Garmin code restored/);

@@ -20,6 +20,8 @@ from zoneinfo import ZoneInfo
 from api import make_server, password_record
 from core import Store, synchronize
 from health import synchronize_health
+from user_garmin import UserGarmin, operation_lock
+from accounts import AccountError
 
 STATE = Path(os.environ.get("TG_GARMIN_STATE", "/var/lib/tg-garmin"))
 TOKENSTORE = STATE / "session"
@@ -101,6 +103,11 @@ def sync(store, limit=20, api=None):
 
 
 def connect(store):
+    with operation_lock(STATE):
+        return connect_locked(store)
+
+
+def connect_locked(store):
     if os.geteuid() != 0:
         raise RuntimeError("Запусти tg-garmin connect в терминале администратора сервера.")
     print("Вход напрямую в Garmin. Пароль вводится только здесь и не сохраняется.")
@@ -159,7 +166,17 @@ def main():
     if args.command == "connect":
         connect(store)
     elif args.command == "sync":
-        sync(store)
+        failed = False
+        try:
+            with operation_lock(STATE):
+                sync(store)
+        except AccountError:
+            print('Garmin занят другим подключением; повтор при следующем опросе.')
+        except RuntimeError:
+            failed = True
+        UserGarmin(store).sync_all()
+        if failed:
+            raise RuntimeError('Garmin временно недоступен')
     elif args.command == "serve":
         make_server(store).serve_forever()
     elif args.command == "disconnect":
