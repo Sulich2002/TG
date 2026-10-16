@@ -1,8 +1,8 @@
-import {setupCoach} from './coach-ui.js?v=0.12.3';
-import {setupFriends} from './friends-ui.js?v=0.12.3';
-import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.12.3';
-import {normalizeProfile} from './profile.js?v=0.12.3';
-import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.12.3';
+import {setupCoach} from './coach-ui.js?v=0.13.0';
+import {setupFriends} from './friends-ui.js?v=0.13.0';
+import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.13.0';
+import {normalizeProfile} from './profile.js?v=0.13.0';
+import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.13.0';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
 let friends,coach;
@@ -100,6 +100,7 @@ function render() {
 }
 function renderProfile(){
   document.querySelector('main').hidden=!profile;document.querySelector('.bottom-nav').hidden=!profile;
+  $('welcome-screen').hidden=Boolean(profile);
   if(!profile)return;
   $('character-name').textContent=profile.name;
   $('home-greeting').textContent=`Твой день, ${profile.name}.`;
@@ -108,7 +109,7 @@ function renderProfile(){
 }
 function editProfile(){
   $('profile-form').reset();$('profile-error').textContent='';
-  $('close-profile').hidden=!profile;$('profile-submit').textContent=profile?'Сохранить изменения':'Создать и начать';
+  $('close-profile').hidden=false;$('profile-submit').textContent=profile?'Сохранить изменения':'Создать и начать';
   if(profile){$('profile-name').value=profile.name;$('profile-age').value=profile.age;$('profile-height').value=profile.height;$('profile-weight').value=profile.weight;document.querySelector(`input[name=sex][value=${profile.sex}]`).checked=true;}
   $('profile-dialog').showModal();updateBack();
 }
@@ -118,8 +119,9 @@ $('profile-form').addEventListener('submit',async event=>{
   try{localStorage.setItem('my-character-profile-v1',JSON.stringify(next));}catch{$('profile-error').textContent='Не удалось сохранить. Разреши хранение данных на устройстве.';return;}
   profile=next;$('profile-dialog').close();render();persist(state);if(avatar)try{await avatar.setProfile(profile);}catch{notify('Профиль сохранён. Модель загрузится при следующем открытии.');}navigate('character');
 });
-$('edit-profile').addEventListener('click',editProfile);$('close-profile').addEventListener('click',()=>{if(profile)$('profile-dialog').close();});
-$('profile-dialog').addEventListener('cancel',event=>{if(!profile)event.preventDefault();});$('profile-dialog').addEventListener('close',updateBack);
+$('edit-profile').addEventListener('click',editProfile);$('welcome-create').addEventListener('click',editProfile);
+$('close-profile').addEventListener('click',()=>$('profile-dialog').close());
+$('profile-dialog').addEventListener('close',updateBack);
 function renderCalendar(){
   const days=Array.from({length:7},(_,index)=>shiftDay(calendarWeek,index));
   $('calendar-month').textContent=new Intl.DateTimeFormat('ru',{day:'numeric',month:'short',year:'numeric'}).formatRange(new Date(calendarWeek+'T12:00:00'),new Date(shiftDay(calendarWeek,6)+'T12:00:00'));
@@ -182,7 +184,7 @@ async function ensureAvatar(){
   }
   if(avatarPromise)return;
   $('avatar-viewport').replaceChildren();
-  avatarPromise=import('./avatar.js?v=0.12.3').then(async({createAvatar})=>{
+  avatarPromise=import('./avatar.js?v=0.13.0').then(async({createAvatar})=>{
     avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});
     // The profile can change while the initial geometry is downloading.
     await avatar.setProfile(profile);avatar.setLevel(levelProgress(totalXP(state)).level);
@@ -273,12 +275,13 @@ function initializeTelegram(){
   if(app.isVersionAtLeast?.('6.1')){app.setHeaderColor('#171b21');app.setBackgroundColor('#171b21');}
   if(app.isVersionAtLeast?.('7.10'))app.setBottomBarColor('#1a1e26');
   function applyInsets(){const top=(app.safeAreaInset?.top||0)+(app.contentSafeAreaInset?.top||0),bottom=Math.max(app.safeAreaInset?.bottom||0,app.contentSafeAreaInset?.bottom||0);document.documentElement.style.setProperty('--safe-top',`${top}px`);document.documentElement.style.setProperty('--safe-bottom',`max(env(safe-area-inset-bottom, 0px), ${bottom}px)`);}
-  applyInsets();app.onEvent?.('safeAreaChanged',applyInsets);app.onEvent?.('contentSafeAreaChanged',applyInsets);app.BackButton?.onClick(()=>{document.querySelector('dialog[open]')?(profile?document.querySelector('dialog[open]').close():null):document.body.classList.contains('coach-chat-open')?coach.back():navigate('today');});updateBack();
+  applyInsets();app.onEvent?.('safeAreaChanged',applyInsets);app.onEvent?.('contentSafeAreaChanged',applyInsets);app.BackButton?.onClick(()=>{document.querySelector('dialog[open]')?document.querySelector('dialog[open]').close():document.body.classList.contains('coach-chat-open')?coach.back():navigate('today');});updateBack();
 }
-document.querySelector('script[src*="telegram-web-app"]').addEventListener('load',initializeTelegram);initializeTelegram();render();if(!profile)editProfile();else persist(state);
+document.querySelector('script[src*="telegram-web-app"]').addEventListener('load',initializeTelegram);initializeTelegram();render();if(profile)persist(state);
 
 setupGarmin({getState:()=>state,persist,notify,getProfile:()=>profile,onDialog:updateBack,onNavigate:navigate,onImport:day=>{historyDay=day;calendarWeek=weekStart(day);renderHistory();navigate('history');}});
 
 friends=setupFriends({getState:()=>state,getProfile:()=>profile,onNavigate:navigate,onDialog:updateBack,notify});
+$('welcome-login').addEventListener('click',()=>friends.login());
 
 coach=setupCoach({getState:()=>state,onNavigate:navigate,onDialog:updateBack,notify});

@@ -134,3 +134,20 @@ body.coach-chat-open .bottom-nav{display:none}
 .coach-keyboard-open .coach-composer{padding-bottom:6px}
 @media(max-width:360px){.coach-chat-header{padding-left:6px;padding-right:6px}.coach-composer{padding-left:8px;padding-right:8px}.coach-composer .coach-prompts{gap:5px}.coach-composer .coach-prompts button{font-size:10px;padding-left:7px;padding-right:7px}}
 .coach-context{min-height:24px;padding:0 2px 4px;line-height:16px;font-size:9px}.coach-context>button{min-width:24px;height:20px;line-height:18px;font-size:19px;padding:0}
+
+/* First visit: a choice before creating a local profile. */
+.welcome-screen{min-height:calc(100dvh - var(--safe-top));max-width:430px;margin:auto;padding:clamp(42px,12dvh,110px) 26px 32px;display:flex;flex-direction:column;justify-content:center}
+.welcome-mark{display:grid;place-items:center;width:66px;height:66px;margin-bottom:32px;border:1px solid #456451;border-radius:23px;background:linear-gradient(145deg,#2c4436,#1c2a24);color:#b9dfca}
+.welcome-mark svg{width:32px;height:32px}
+.welcome-screen h1{font-size:32px;line-height:1.2;letter-spacing:-.8px}
+.welcome-screen .eyebrow{font-size:8px;line-height:1.7;letter-spacing:1.3px}
+.welcome-description{margin:16px 0 30px;font-size:15px;line-height:1.7;color:#aabcb2;max-width:290px}
+.welcome-actions{display:grid;gap:12px}
+.welcome-actions button{width:100%;min-height:52px;margin:0;font-size:15px;border-radius:15px}
+.welcome-login{background:#1e2d25;border:1px solid #496351;color:#d1e8da;padding:14px 18px}
+.welcome-login:disabled{opacity:.65;cursor:wait}
+.welcome-note{font-size:12px;line-height:1.8;color:#8caa98;margin:25px 0 0}
+#friends-server-settings{margin:18px 0;padding:12px;border:1px solid #3b5144;border-radius:12px;color:#a5c1b0}
+#friends-server-settings summary{font-size:11px;line-height:1.7;overflow-wrap:anywhere;cursor:pointer}
+#friends-server-settings[open] summary{margin-bottom:16px}
+@media(max-width:360px){.welcome-screen{padding-left:22px;padding-right:22px}.welcome-screen h1{font-size:29px}}

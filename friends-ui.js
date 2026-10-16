@@ -1,8 +1,8 @@
-import {garminURL} from './garmin.js?v=0.12.3';
-import {normalize,awardAchievements,formatXP,mergeHabits} from './progress.js?v=0.12.3';
+import {garminURL} from './garmin.js?v=0.13.0';
+import {normalize,awardAchievements,formatXP,mergeHabits} from './progress.js?v=0.13.0';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
-const accountKey='my-character-account-v1',backupKey='my-character-before-account-v1';
+const accountKey='my-character-account-v1',backupKey='my-character-before-account-v1',serverKey='my-character-server-v1';
 const localKeys=['my-character-v2','my-character-profile-v1','my-character-garmin-v1','my-character-garmin-health-v1'];
 const needsUpdatedProgress=state=>Array.isArray(state.habits)||state.events.some(e=>['habit','habit-bonus'].includes(e.kind)||(e.kind==='workout'&&e.data.type==='swim'));
 const updateMessage='Для привычек и плавания обнови коннектор на сервере. Новые записи пока сохранены на этом устройстве.';
@@ -10,12 +10,23 @@ const messages={invalid_invite:'Приглашение недействител�
 const bundle=()=>Object.fromEntries(localKeys.map(key=>[key,localStorage.getItem(key)]));
 function restore(value){for(const key of localKeys){if(typeof value?.[key]==='string')localStorage.setItem(key,value[key]);else localStorage.removeItem(key);}}
 function invitation(url,invite){const link=new URL(location.href);link.hash=new URLSearchParams({join:JSON.stringify({url,invite})}).toString();return link.href;}
-function parseInvitation(){try{const value=JSON.parse(new URLSearchParams(location.hash.slice(1)).get('join'));if(typeof value.invite==='string'&&/^[A-Za-z0-9_-]{20,128}$/.test(value.invite))return {url:garminURL(value.url),invite:value.invite};}catch{}return null;}
+export function accountLinkData(href){
+ try{
+  const hash=new URLSearchParams(new URL(href).hash.slice(1)),join=hash.get('join');
+  if(join){const value=JSON.parse(join);if(typeof value.invite==='string'&&/^[A-Za-z0-9_-]{20,128}$/.test(value.invite))return {url:garminURL(value.url),invite:value.invite};return null;}
+  if(hash.has('server'))return {url:garminURL(hash.get('server'))};
+ }catch{}
+ return null;
+}
+export function accountServerLink(href,url){const link=new URL(href);link.hash=new URLSearchParams({server:garminURL(url)}).toString();return link.href;}
 
 export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
- let settings=null,period='week',busy=false,ready=false,updatedProgress=false,conflict=false,version=0,boardGeneration=0,timer,pendingInvite=parseInvitation();
+ const entry=accountLinkData(location.href);
+ let settings=null,period='week',busy=false,ready=false,updatedProgress=false,conflict=false,version=0,boardGeneration=0,timer,pendingInvite=entry?.invite?entry:null;
  try{const saved=JSON.parse(localStorage.getItem(accountKey));if(saved&&/^[A-Za-z0-9_-]{20,128}$/.test(saved.token)&&typeof saved.id==='string'&&Number.isSafeInteger(saved.revision)){settings={...saved,url:garminURL(saved.url)};}}catch{}
  const initialGarmin=()=>{try{return JSON.parse(localStorage.getItem('my-character-garmin-v1'));}catch{return null;}};
+ function serverAddress(){try{return garminURL(entry?.url||settings?.url||initialGarmin()?.url||localStorage.getItem(serverKey));}catch{return '';}}
+ function rememberServer(url){localStorage.setItem(serverKey,url);history.replaceState(null,'',accountServerLink(location.href,url));}
  function save(){localStorage.setItem(accountKey,JSON.stringify(settings));}
  async function request(url,path,{token,body}={}){
   let response;try{response=await fetch(garminURL(url)+path,{method:body?'POST':'GET',headers:{...(token?{Authorization:'Bearer '+token}:{}),...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),credentials:'omit',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000)});}catch{throw new Error('Нет связи с сервером. Записи сохраняются на этом устройстве.');}
@@ -26,19 +37,34 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  function render(){
   $('friends-start').hidden=Boolean(settings);$('friends-account').hidden=!settings;$('friends-board').hidden=!settings;
   $('friends-conflict').hidden=!conflict;
+  $('welcome-login').disabled=Boolean(settings)&&busy&&!getProfile();
+  $('welcome-login').textContent=settings&&!getProfile()?(busy?'Восстанавливаем аккаунт…':'Повторить вход'):'Войти в аккаунт';
   if(settings){$('friends-name').textContent=getProfile()?.name||settings.username;$('friends-login-name').textContent='Логин: '+settings.username;$('friends-invite').hidden=!settings.owner;}
   for(const button of document.querySelectorAll('[data-friends-period]')){const active=button.dataset.friendsPeriod===period;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));}
  }
  function go(){onNavigate('progress');document.querySelector('[data-progress-tab=friends]').click();}
  function open(mode){
-  if(settings){notify('Ты уже вошёл в аккаунт. Для другого аккаунта сначала выйди.');return;}
-  if(!getProfile()){notify('Сначала создай персонажа.');return;}
-  go();$('friends-form').reset();$('friends-mode').value=mode;
-  $('friends-url').value=pendingInvite?.url||settings?.url||initialGarmin()?.url||'';
+  if(settings){if(!getProfile()){initialize();return;}notify('Ты уже вошёл в аккаунт. Для другого аккаунта сначала выйди.');return;}
+  if(!getProfile()&&mode!=='login'){notify('Сначала создай персонажа.');return;}
+  if(getProfile())go();$('friends-form').reset();$('friends-mode').value=mode;
+  $('friends-mode-field').hidden=!getProfile();
+  $('friends-url').value=serverAddress();
   $('friends-invite-code').value=pendingInvite?.invite||'';
   $('friends-error').textContent='';modeChanged();$('friends-dialog').showModal();onDialog();
  }
- function modeChanged(){const mode=$('friends-mode').value;$('friends-invite-field').hidden=mode!=='join';$('friends-invite-code').required=mode==='join';$('friends-password').autocomplete=mode==='login'?'current-password':'new-password';$('friends-account-note').textContent=mode==='login'?'Загрузим твой профиль и дневник с сервера. Текущая локальная копия останется в резерве на этом устройстве.':'Твой персонаж и дневник сохранятся в отдельном аккаунте. Друзьям будут видны имя, уровень и XP за выбранный период.';}
+ function modeChanged(){
+  if(!getProfile())$('friends-mode').value='login';
+  const mode=$('friends-mode').value,login=mode==='login',url=$('friends-url').value;
+  $('friends-title').textContent=login?'Вход в аккаунт':'Аккаунт и друзья';
+  $('friends-submit').textContent=login?'Войти':'Продолжить';
+  $('friends-server-settings').open=!login||!url;
+  let serverLabel='Указать сервер приложения';try{serverLabel='Сервер: '+new URL(garminURL(url)).hostname;}catch{}
+  $('friends-server-name').textContent=serverLabel;
+  $('friends-invite-field').hidden=mode!=='join';$('friends-invite-code').required=mode==='join';
+  $('friends-password').autocomplete=login?'current-password':'new-password';
+  $('friends-password-hint').textContent=login?'Введи пароль своего аккаунта приложения.':'Придумай отдельный пароль от 12 символов. Он нужен для входа с другого устройства.';
+  $('friends-account-note').textContent=login?(getProfile()?'Загрузим твой профиль и дневник с сервера. Текущая локальная копия останется в резерве на этом устройстве.':'Твой персонаж, уровень и записи загрузятся после входа.'):'Твой персонаж и дневник сохранятся в отдельном аккаунте. Друзьям будут видны имя, уровень и XP за выбранный период.';
+ }
  $('friends-mode').addEventListener('change',modeChanged);
  $('friends-create').addEventListener('click',()=>open('create'));
  $('friends-login').addEventListener('click',()=>open('login'));
@@ -53,7 +79,7 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
   if(!preserveGarmin&&settings?.id!==account.id){let cached=null;try{cached=JSON.parse(localStorage.getItem('my-character-account-cache:'+account.id));}catch{}restore(cached);if(cached?.dirty&&Number.isSafeInteger(cached.accountRevision))pending=cached;}
   if(!pending){localStorage.setItem('my-character-v2',JSON.stringify(normalize(account.state)));localStorage.setItem('my-character-profile-v1',JSON.stringify(account.profile));}
   settings={url,token:result.token,id:account.id,username:account.username,owner:account.owner,revision:pending?pending.accountRevision:account.revision,dirty:Boolean(pending),...(settings?.id===account.id&&settings.invite?{invite:settings.invite}:{}),...(result.invite?{invite:result.invite}:{})};save();
-  if(pendingInvite)history.replaceState(null,'',location.pathname+location.search);
+  rememberServer(url);
   sessionStorage.setItem('my-character-open-friends','1');location.reload();
  }
  $('friends-form').addEventListener('submit',async event=>{
@@ -83,7 +109,7 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
    if(account.revision!==settings.revision){if(settings.dirty){conflict=true;status(messages.sync_conflict);}else{adopt({account,token:settings.token},settings.url);return;}}
    else if(JSON.stringify(normalize(account.state))!==JSON.stringify(getState())||JSON.stringify(account.profile)!==JSON.stringify(getProfile())){settings.dirty=true;save();}
    ready=true;if(!conflict)status(settings.dirty?'Есть записи для отправки.':'Дневник сохранён на сервере.');
-  }catch(error){status(error.message);ready=false;}finally{busy=false;render();}
+  }catch(error){status(error.message);ready=false;if(error.code==='account_required'){settings=null;localStorage.removeItem(accountKey);}}finally{busy=false;render();}
   if(ready&&!conflict&&settings.dirty)flush();refresh();
  }
  async function flush(){
@@ -127,8 +153,11 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  document.querySelector('[data-progress-tab=friends]').addEventListener('click',()=>{render();if(settings){if(!ready)initialize();else{flush();refresh();}}});
  setInterval(()=>{if(settings&&!document.hidden&&!$('progress-friends').hidden&&!$('panel-progress').hidden){flush();refresh();}},60000);
  render();if(settings)initialize();
- if(pendingInvite&&settings){pendingInvite=null;history.replaceState(null,'',location.pathname+location.search);setTimeout(go,0);}
+ const knownServer=serverAddress();
+ if(settings){rememberServer(settings.url);}
+ else if(knownServer){localStorage.setItem(serverKey,knownServer);if(!pendingInvite)history.replaceState(null,'',accountServerLink(location.href,knownServer));}
+ if(pendingInvite&&settings){pendingInvite=null;setTimeout(go,0);}
  else if(pendingInvite&&getProfile())setTimeout(()=>open('join'),0);
  if(sessionStorage.getItem('my-character-open-friends')){sessionStorage.removeItem('my-character-open-friends');go();}
- return {changed};
+ return {changed,login:()=>open('login')};
 }
