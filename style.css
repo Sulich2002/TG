@@ -111,3 +111,26 @@ body.coach-chat-open #panel-progress>.page-heading,body.coach-chat-open #panel-p
 @media(max-width:360px){#coach-scroll{padding:19px 15px}.coach-chat-header{padding-left:8px;padding-right:8px}.coach-composer{padding-left:9px;padding-right:9px}.coach-composer .coach-prompts button{font-size:9px}.coach-menu-content{width:276px}}
 @media(prefers-reduced-motion:reduce){.coach-typing>span{animation:none;opacity:.7}}
 body.coach-chat-open #coach-workout-dialog,body.coach-chat-open #coach-settings-dialog,body.coach-chat-open #coach-provider-dialog{max-height:calc(var(--coach-visible-height,100dvh) - 24px);bottom:max(0px,calc(100dvh - var(--coach-visible-height,100dvh) - var(--coach-visible-top,0px)))}
+
+
+/* Give the conversation priority over its controls. */
+body.coach-chat-open .bottom-nav{display:none}
+#progress-coach{padding-bottom:0}
+.coach-chat-header{min-height:48px;padding:4px 10px;gap:6px}
+.coach-chat-header h1{font-size:17px;line-height:1.3;letter-spacing:-.25px}
+.coach-icon-button{width:40px;min-width:40px;height:40px;font-size:28px}
+#coach-menu>summary{width:40px;height:40px;font-size:22px}
+.coach-menu-content{top:43px}
+#coach-scroll{padding:16px}
+.coach-composer{padding:6px 10px max(8px,var(--safe-bottom))}
+.coach-composer .coach-prompts{display:flex;flex-wrap:nowrap;gap:6px;margin:0 0 6px;overflow-x:auto;scrollbar-width:none}
+.coach-composer .coach-prompts::-webkit-scrollbar{display:none}
+.coach-composer .coach-prompts button{min-height:30px;flex:0 0 auto;font-size:10px;line-height:1.4;padding:5px 8px;border-radius:10px;white-space:nowrap}
+#coach-form{gap:6px;padding:4px;border-radius:17px}
+#coach-text{min-height:34px;max-height:80px;padding:5px 8px;line-height:1.5;border-radius:10px}
+#coach-form .coach-send{width:32px;min-width:32px;height:32px;min-height:32px;border-radius:11px;font-size:21px}
+.coach-context{min-height:28px;padding-bottom:4px}
+.coach-chat-welcome{padding:16px 8px}.coach-chat-welcome svg{width:34px;height:34px;padding:7px;border-radius:12px}.coach-chat-welcome h2{font-size:21px;margin:16px 0 10px}
+.coach-keyboard-open .coach-composer{padding-bottom:6px}
+@media(max-width:360px){.coach-chat-header{padding-left:6px;padding-right:6px}.coach-composer{padding-left:8px;padding-right:8px}.coach-composer .coach-prompts{gap:5px}.coach-composer .coach-prompts button{font-size:10px;padding-left:7px;padding-right:7px}}
+.coach-context{min-height:24px;padding:0 2px 4px;line-height:16px;font-size:9px}.coach-context>button{min-width:24px;height:20px;line-height:18px;font-size:19px;padding:0}

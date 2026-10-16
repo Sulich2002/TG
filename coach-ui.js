@@ -1,5 +1,5 @@
-import {garminURL} from './garmin.js?v=0.12.0';
-import {normalize,dayKey,shiftDay,workoutTypes,workoutDescription,formatXP} from './progress.js?v=0.12.0';
+import {garminURL} from './garmin.js?v=0.12.1';
+import {normalize,dayKey,shiftDay,workoutTypes,workoutDescription,formatXP} from './progress.js?v=0.12.1';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const errors={account_required:'Войди в аккаунт приложения заново.',not_found:'Обнови коннектор на сервере, чтобы включить тренера.',coach_not_configured:'Владелец группы ещё не подключил ИИ.',coach_consent_required:'Сначала разреши передачу данных в настройках тренера.',coach_busy:'Тренер ещё обрабатывает запрос. Подожди немного.',coach_daily_limit:'Лимит сообщений на сегодня исчерпан. Он обновится завтра по московскому времени.',coach_quota:'Бесплатная квота Groq временно исчерпана. Попробуй позже; платный сервис не подключается.',coach_key_invalid:'Groq не принял ключ. Владельцу нужно проверить подключение.',coach_key_format:'Нужен ключ Groq, начинающийся с gsk_, и подтверждение бесплатного тарифа.',coach_model_unavailable:'Доступная модель не найдена. Проверь доступ к моделям в аккаунте Groq.',coach_unavailable:'ИИ сейчас не ответил. Текст сохранён в поле — можно повторить отправку.',coach_workout_missing:'Тренировка недоступна в контексте. Выбери запись за последние 30 дней.',coach_conflict:'Разговор изменился на другом устройстве. История обновлена, твой текст остался в поле.',coach_request_conflict:'Это сообщение уже отправлялось с другим содержимым. Измени текст и отправь снова.',coach_message_invalid:'Напиши сообщение длиной до 2000 символов.',coach_settings_invalid:'Проверь цель и дату события.',owner_required:'Подключение ИИ настраивает владелец группы.',invalid_progress:'Проверь дневник: не удалось прочитать одну из записей.'};
@@ -33,7 +33,7 @@ export function setupCoach({getState,onNavigate,onDialog,notify}){
   if(document.activeElement!==textInput)viewportBaseline=Math.max(innerHeight,height);
   const keyboard=document.activeElement===textInput&&viewportBaseline-height>120;document.body.classList.toggle('coach-keyboard-open',keyboard);
   document.documentElement.style.setProperty('--coach-visible-height',height+'px');document.documentElement.style.setProperty('--coach-visible-top',(viewport?.offsetTop||0)+'px');
-  const nav=document.querySelector('.bottom-nav');$('progress-coach').style.setProperty('--chat-height',height+'px');$('progress-coach').style.setProperty('--chat-top',(viewport?.offsetTop||0)+'px');$('progress-coach').style.setProperty('--chat-nav-height',(keyboard?0:nav?.getBoundingClientRect().height||76)+'px');if(following)toBottom();
+  $('progress-coach').style.setProperty('--chat-height',height+'px');$('progress-coach').style.setProperty('--chat-top',(viewport?.offsetTop||0)+'px');$('progress-coach').style.setProperty('--chat-nav-height','0px');if(following)toBottom();
  }
  function updateVisibility(){
   const next=!$('panel-progress').hidden&&!$('progress-coach').hidden;document.body.classList.toggle('coach-chat-open',next);
@@ -41,7 +41,7 @@ export function setupCoach({getState,onNavigate,onDialog,notify}){
   if(!active){following=true;viewportBaseline=innerHeight;}active=true;updateViewport();
  }
  function back(){$('coach-menu').open=false;onNavigate('progress');document.querySelector('[data-progress-tab=activities]').click();}
- function resizeInput(){textInput.style.height='auto';textInput.style.height=Math.min(112,textInput.scrollHeight)+'px';if(following)toBottom();}
+ function resizeInput(){textInput.style.height='auto';textInput.style.height=Math.min(80,textInput.scrollHeight)+'px';if(following)toBottom();}
  function appendAnswer(container,text){
   for(const line of text.split('\n')){const p=node('p',null,'coach-answer-line'),parts=line.replace(/^#{1,6}\s+/,'').split(/(\*\*[^*\n]+\*\*)/g);for(const part of parts)p.append(part.startsWith('**')&&part.endsWith('**')?node('strong',part.slice(2,-2)):document.createTextNode(part));if(!line)p.append(document.createElement('br'));container.append(p);}
  }
@@ -56,7 +56,6 @@ export function setupCoach({getState,onNavigate,onDialog,notify}){
  function render(){
   const signed=Boolean(account());$('coach-login-state').hidden=signed;$('coach-body').hidden=!signed;$('coach-provider').hidden=!data?.owner;
   $('coach-configure').textContent=data?.configured?'Подключение ИИ':'Подключить ИИ';$('coach-service-note').textContent=data?.configured?`${data.model} · Groq. Квота общая для группы.`:'Подключение к бесплатному аккаунту Groq настраивает владелец группы.';
-  $('coach-subtitle').textContent=busy?'Смотрю твои записи…':data?.configured?'Тренировки и восстановление':'Личный чат';
   $('coach-goal-preview').textContent=data?.goal?.text?(data.goal.text+(data.goal.eventDay?' · '+dateLabel(data.goal.eventDay):'')):'Цель пока не задана';
   $('coach-limits').textContent=data?.configured&&data.limits?`Осталось запросов сегодня: ${data.limits.remaining} из личного предела ${data.limits.dailyLimit}. У группы есть общий лимит.`:'';
   $('coach-settings').disabled=busy||!ready;$('coach-configure').disabled=busy||!ready;$('coach-clear').disabled=busy||!data?.messages.length;$('coach-send').disabled=busy||!canSend()||!textInput.value.trim();
