@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {accountLinkData,accountServerLink} from './friends-ui.js';
+import {accountLinkData,accountServerLink,resolveAccountServer} from './friends-ui.js';
 const base='https://sulich2002.github.io/TG/',server='https://fixture.trycloudflare.com';
 test('a public account link carries only the server and opens in a fresh browser',()=>{
  const link=accountServerLink(base+'#join=old',server+'/');
@@ -23,4 +23,16 @@ test('malformed invitations and unsafe or credential-bearing server links are ig
  }
  assert.equal(accountLinkData(base+'#join=broken'),null);
  assert.equal(accountLinkData(base+'#'+new URLSearchParams({join:JSON.stringify({url:server,invite:'short'})})),null);
+});
+
+test('a new browser uses the shared server without an invitation or browser storage',()=>{
+ assert.equal(resolveAccountServer(undefined,null,'',server,undefined),server);
+ assert.equal(resolveAccountServer('broken','http://example.com',server),server);
+ assert.equal(resolveAccountServer(undefined,null,''),'');
+});
+test('explicit invitations and existing accounts retain their own server',()=>{
+ const custom='https://another-fixture.trycloudflare.com';
+ assert.equal(resolveAccountServer(custom,server),custom);
+ assert.equal(resolveAccountServer(undefined,custom,server),custom);
+ assert.equal(resolveAccountServer('https://user:password@example.com',server),server);
 });

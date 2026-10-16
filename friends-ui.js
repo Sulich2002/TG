@@ -1,5 +1,5 @@
-import {garminURL} from './garmin.js?v=0.13.1';
-import {normalize,awardAchievements,formatXP,mergeHabits} from './progress.js?v=0.13.1';
+import {garminURL} from './garmin.js?v=0.13.2';
+import {normalize,awardAchievements,formatXP,mergeHabits} from './progress.js?v=0.13.2';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const accountKey='my-character-account-v1',backupKey='my-character-before-account-v1',serverKey='my-character-server-v1';
@@ -19,14 +19,22 @@ export function accountLinkData(href){
  return null;
 }
 export function accountServerLink(href,url){const link=new URL(href);link.hash=new URLSearchParams({server:garminURL(url)}).toString();return link.href;}
+export function resolveAccountServer(...candidates){
+ for(const candidate of candidates){try{return garminURL(candidate);}catch{}}
+ return '';
+}
 
 export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  const entry=accountLinkData(location.href);
+ const sharedServer=resolveAccountServer(document.querySelector('meta[name="application-server"]')?.content);
  let settings=null,period='week',busy=false,ready=false,updatedProgress=false,conflict=false,version=0,boardGeneration=0,timer,pendingInvite=entry?.invite?entry:null;
  let inviteRequest=null,inviteGeneration=0;
  try{const saved=JSON.parse(localStorage.getItem(accountKey));if(saved&&/^[A-Za-z0-9_-]{20,128}$/.test(saved.token)&&typeof saved.id==='string'&&Number.isSafeInteger(saved.revision)){settings={...saved,url:garminURL(saved.url)};}}catch{}
  const initialGarmin=()=>{try{return JSON.parse(localStorage.getItem('my-character-garmin-v1'));}catch{return null;}};
- function serverAddress(){try{return garminURL(entry?.url||settings?.url||initialGarmin()?.url||localStorage.getItem(serverKey));}catch{return '';}}
+ function serverAddress(){
+  let remembered;try{remembered=localStorage.getItem(serverKey);}catch{}
+  return resolveAccountServer(entry?.url,settings?.url,initialGarmin()?.url,sharedServer,remembered);
+ }
  function rememberServer(url){localStorage.setItem(serverKey,url);history.replaceState(null,'',accountServerLink(location.href,url));}
  function save(){localStorage.setItem(accountKey,JSON.stringify(settings));}
  async function request(url,path,{token,body}={}){
@@ -60,7 +68,7 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
   $('friends-title').textContent=login?'Вход в аккаунт':'Аккаунт и друзья';
   $('friends-submit').textContent=login?'Войти':'Продолжить';
   $('friends-server-settings').open=!login||!url;
-  let serverLabel='Указать сервер приложения';try{serverLabel='Сервер: '+new URL(garminURL(url)).hostname;}catch{}
+  let serverLabel='Указать сервер приложения';try{serverLabel=sharedServer&&url===sharedServer?'Параметры подключения':'Сервер: '+new URL(garminURL(url)).hostname;}catch{}
   $('friends-server-name').textContent=serverLabel;
   $('friends-invite-field').hidden=mode!=='join';$('friends-invite-code').required=mode==='join';
   $('friends-password').autocomplete=login?'current-password':'new-password';
