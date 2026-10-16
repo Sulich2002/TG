@@ -173,7 +173,7 @@ def make_server(store, address=("127.0.0.1", 8765), origin=ORIGIN, garmin_servic
                             db.execute('DELETE FROM friend_sessions WHERE digest=?', (token_digest(auth[7:]),))
                         return self.respond(200, {'ok': True})
                 elif self.path == '/v2/me':
-                    return self.respond(200, {'account': accounts.snapshot(user)})
+                    return self.respond(200, {'account': accounts.snapshot(user), 'features':{'customHabits':True,'swimming':True}})
                 elif self.path == '/v2/garmin/activities':
                     return self.respond(200, watches.data(user))
                 elif self.path.startswith('/v2/garmin/jobs/'):

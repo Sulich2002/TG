@@ -1,9 +1,11 @@
-import {garminURL} from './garmin.js?v=0.9.0';
-import {normalize,awardAchievements,formatXP} from './progress.js?v=0.9.0';
+import {garminURL} from './garmin.js?v=0.10.0';
+import {normalize,awardAchievements,formatXP,mergeHabits} from './progress.js?v=0.10.0';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const accountKey='my-character-account-v1',backupKey='my-character-before-account-v1';
 const localKeys=['my-character-v2','my-character-profile-v1','my-character-garmin-v1','my-character-garmin-health-v1'];
+const needsUpdatedProgress=state=>Array.isArray(state.habits)||state.events.some(e=>['habit','habit-bonus'].includes(e.kind)||(e.kind==='workout'&&e.data.type==='swim'));
+const updateMessage='Для привычек и плавания обнови коннектор на сервере. Новые записи пока сохранены на этом устройстве.';
 const messages={invalid_invite:'Приглашение недействительно. Попроси новую ссылку у владельца.',username_taken:'Этот логин уже занят.',invalid_credentials:'Логин: 3–32 латинские буквы, цифры или _. Пароль: 12–200 символов.',bad_login:'Проверь логин и пароль.',account_required:'Войди в аккаунт заново.',owner_required:'Для создания группы нужно подключение к своему серверу Garmin.',group_exists:'Группа уже создана. Войди в свой аккаунт.',rate_limited:'Много попыток. Подожди минуту.',invalid_progress:'Не удалось проверить записи дневника.',invalid_profile:'Проверь данные персонажа.',group_full:'В группе достигнут лимит участников.',sync_conflict:'Дневник изменился на другом устройстве. Выбери, как продолжить.'};
 const bundle=()=>Object.fromEntries(localKeys.map(key=>[key,localStorage.getItem(key)]));
 function restore(value){for(const key of localKeys){if(typeof value?.[key]==='string')localStorage.setItem(key,value[key]);else localStorage.removeItem(key);}}
@@ -11,7 +13,7 @@ function invitation(url,invite){const link=new URL(location.href);link.hash=new 
 function parseInvitation(){try{const value=JSON.parse(new URLSearchParams(location.hash.slice(1)).get('join'));if(typeof value.invite==='string'&&/^[A-Za-z0-9_-]{20,128}$/.test(value.invite))return {url:garminURL(value.url),invite:value.invite};}catch{}return null;}
 
 export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
- let settings=null,period='week',busy=false,ready=false,conflict=false,version=0,boardGeneration=0,timer,pendingInvite=parseInvitation();
+ let settings=null,period='week',busy=false,ready=false,updatedProgress=false,conflict=false,version=0,boardGeneration=0,timer,pendingInvite=parseInvitation();
  try{const saved=JSON.parse(localStorage.getItem(accountKey));if(saved&&/^[A-Za-z0-9_-]{20,128}$/.test(saved.token)&&typeof saved.id==='string'&&Number.isSafeInteger(saved.revision)){settings={...saved,url:garminURL(saved.url)};}}catch{}
  const initialGarmin=()=>{try{return JSON.parse(localStorage.getItem('my-character-garmin-v1'));}catch{return null;}};
  function save(){localStorage.setItem(accountKey,JSON.stringify(settings));}
@@ -76,7 +78,7 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  }
  async function initialize(){
   if(!settings||busy)return;busy=true;render();status('Проверяю сохранённый дневник…');
-  try{const {account}=await request(settings.url,'/v2/me',{token:settings.token});
+  try{const {account,features}=await request(settings.url,'/v2/me',{token:settings.token});updatedProgress=features?.customHabits===true&&features?.swimming===true;
    if(!getProfile()){adopt({account,token:settings.token},settings.url);return;}
    if(account.revision!==settings.revision){if(settings.dirty){conflict=true;status(messages.sync_conflict);}else{adopt({account,token:settings.token},settings.url);return;}}
    else if(JSON.stringify(normalize(account.state))!==JSON.stringify(getState())||JSON.stringify(account.profile)!==JSON.stringify(getProfile())){settings.dirty=true;save();}
@@ -87,6 +89,7 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  async function flush(){
   if(!settings||!settings.dirty||busy||conflict)return;
   if(!ready){await initialize();return;}
+  const local=getState();if(!updatedProgress&&needsUpdatedProgress(local)){status(updateMessage);return;}
   busy=true;const ticket=version;status('Сохраняю дневник…');
   try{const {account}=await request(settings.url,'/v2/sync',{token:settings.token,body:{revision:settings.revision,profile:getProfile(),state:getState()}});settings.revision=account.revision;if(version===ticket)settings.dirty=false;save();status(settings.dirty?'Есть новые записи для отправки.':'Дневник сохранён на сервере.');await refresh();}
   catch(error){if(error.code==='sync_conflict')conflict=true;status(error.message);}finally{busy=false;render();if(settings?.dirty&&!conflict&&version!==ticket)timer=setTimeout(flush,800);}
@@ -111,10 +114,11 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  });
  async function resolve(merge){
   if(!settings)return;
-  try{const {account}=await request(settings.url,'/v2/me',{token:settings.token});localStorage.setItem('my-character-account-conflict-backup:'+settings.id,JSON.stringify(bundle()));
+  try{const {account,features}=await request(settings.url,'/v2/me',{token:settings.token});localStorage.setItem('my-character-account-conflict-backup:'+settings.id,JSON.stringify(bundle()));
    if(!merge){adopt({account,token:settings.token},settings.url);return;}
    const local=getState(),remote=account.state,events=[...new Map([...remote.events,...local.events].map(event=>[event.id,event])).values()],plans=[...new Map([...(remote.plans||[]),...(local.plans||[])].map(plan=>[plan.id,plan])).values()];
-   const state=awardAchievements(normalize({base:Math.max(local.base,remote.base),events,plans}));
+   const habits=mergeHabits(remote,local);const state=awardAchievements(normalize({base:Math.max(local.base,remote.base),events,plans,...(habits?{habits}:{})}));
+   if(!(features?.customHabits===true&&features?.swimming===true)&&needsUpdatedProgress(state)){status(updateMessage);return;}
    const result=await request(settings.url,'/v2/sync',{token:settings.token,body:{revision:account.revision,profile:getProfile(),state}});adopt({account:result.account,token:settings.token},settings.url);
   }catch(error){status(error.message);}
  }

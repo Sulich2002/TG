@@ -88,4 +88,27 @@ class AccountTests(unittest.TestCase):
   with self.assertRaises(AccountError):validate_state(state([task('2026-10-16')]),TODAY)
   with self.assertRaises(AccountError):validate_state(state([task(TODAY),task(TODAY)]),TODAY)
 
+ def test_custom_habits_and_swimming_sync_preserve_history_and_score_ranking(self):
+  _,owner=self.register()
+  custom={'id':'custom:walk','title':'Погулять','xp':5}
+  events=[{'id':TODAY+':habit:custom:walk','kind':'habit','day':TODAY,'habit':custom,'xp':999},
+          {'id':TODAY+':habit-bonus','kind':'habit-bonus','day':TODAY,'required':['custom:walk'],'xp':999},
+          {'id':'swim','kind':'workout','day':TODAY,'data':{'type':'swim','day':TODAY,'distance':1.2,'minutes':30},'xpRule':'volume-v1','xp':999}]
+  diary={**state(events),'habits':[{**custom,'archived':True,'updatedAt':123}]}
+  status,result=self.req('/v2/sync',{'revision':1,'profile':PROFILE,'state':diary},owner['token'])
+  self.assertEqual(status,200);saved=result['account']['state']
+  self.assertEqual(saved['habits'],diary['habits']);self.assertEqual([e['xp'] for e in saved['events']],[5,20,30])
+  fetched=self.req('/v2/me',token=owner['token'])[1]
+  self.assertTrue(fetched['features']['customHabits']);self.assertTrue(fetched['features']['swimming'])
+  self.assertEqual(fetched['account']['state'],saved)
+  self.assertEqual(self.req('/v2/leaderboard/week',token=owner['token'])[1]['entries'][0]['xp'],55)
+  # Archived definitions retain earned XP; an unfinished snapshot cannot earn a bonus.
+  fake={**events[1],'required':['custom:missing']}
+  self.assertEqual(earned(validate_state(state([events[0],fake]),TODAY),TODAY,TODAY),5)
+  # Old and new devices completing the same default habit never double its reward or set bonus.
+  old=[task(TODAY,k) for k in ('warmup','shower','breakfast','reading')]
+  modern=[{'id':TODAY+':habit:'+e['task'],'day':TODAY,'kind':'habit','habit':{'id':e['task']}} for e in old]
+  bonus={**events[1],'required':[e['task'] for e in old]}
+  self.assertEqual(earned(validate_state(state(old+modern+[bonus]),TODAY),TODAY,TODAY),45)
+
 if __name__=='__main__':unittest.main()

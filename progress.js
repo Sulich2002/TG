@@ -1,16 +1,32 @@
-import {garminSource,garminWorkout} from './garmin.js?v=0.9.0';
+import {garminSource,garminWorkout} from './garmin.js?v=0.10.0';
 export const tasks = [
   { id:'warmup', title:'Размяться', description:'Немного движения в комфортном темпе', xp:5, icon:'sun' },
   { id:'shower', title:'Принять душ', description:'Освежиться и начать день', xp:5, icon:'water' },
   { id:'breakfast', title:'Позавтракать', description:'Выделить время на завтрак', xp:5, icon:'cup' },
   { id:'reading', title:'Почитать', description:'Несколько страниц для себя', xp:10, icon:'book' }
 ];
-export const workoutTypes = { run:'Бег', football:'Футбол', home:'Домашняя тренировка', gym:'Зал', other:'Занятие с Garmin' };
+export const workoutTypes = { run:'Бег', football:'Футбол', swim:'Плавание', home:'Домашняя тренировка', gym:'Зал', other:'Занятие с Garmin' };
 export const exercises = { pushups:'Отжимания', pullups:'Подтягивания', squats:'Приседания' };
 export const muscleGroups = { back:'Спина', chest:'Грудь', legs:'Ноги', shoulders:'Плечи', arms:'Руки', full:'Всё тело' };
 const legacyRewards = {run:50,football:50,home:40,gym:60};
 export const planSizes = { small:{title:'Небольшое',xp:5}, medium:{title:'Обычное',xp:10}, large:{title:'Большое',xp:20} };
 const roundXP = value => Math.round(value*10)/10;
+function habitRecord(raw){
+  if(!raw||typeof raw.id!=='string'||!/^[A-Za-z0-9:_-]{1,100}$/.test(raw.id))return null;
+  const standard=tasks.find(task=>task.id===raw.id);
+  const title=standard?.title||(typeof raw.title==='string'?raw.title.replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,80):'');
+  const xp=standard?.xp??raw.xp;
+  return title&&[5,10].includes(xp)&&(standard||raw.id.startsWith('custom:'))?{id:raw.id,title,xp}:null;
+}
+function normalizeHabits(raw){
+  const seen=new Set();return raw.slice(0,100).flatMap(item=>{const habit=habitRecord(item);if(!habit||seen.has(habit.id))return [];seen.add(habit.id);return [{...habit,archived:item.archived===true,updatedAt:Number.isSafeInteger(item.updatedAt)&&item.updatedAt>=0?item.updatedAt:0}];});
+}
+export function habitDefinitions(value){return Array.isArray(value?.habits)?normalizeHabits(value.habits):tasks.map(({id,title,xp})=>({id,title,xp,archived:false,updatedAt:0}));}
+export function dailyHabits(value){return habitDefinitions(value).filter(habit=>!habit.archived).map(habit=>({...habit,description:tasks.find(task=>task.id===habit.id)?.description||'Твоя ежедневная привычка',icon:tasks.find(task=>task.id===habit.id)?.icon||'check'}));}
+export function mergeHabits(remote,local){
+  if(!Array.isArray(remote.habits)&&!Array.isArray(local.habits))return undefined;
+  const merged=new Map();for(const habit of [...habitDefinitions(remote),...habitDefinitions(local)]){const old=merged.get(habit.id);if(!old||habit.updatedAt>=old.updatedAt)merged.set(habit.id,habit);}return [...merged.values()];
+}
 export const formatXP = value => new Intl.NumberFormat('ru',{maximumFractionDigits:1}).format(value);
 export const dayBonus = 20;
 export function dayKey(date = new Date()) {
@@ -33,8 +49,8 @@ export function workoutData(input, today = dayKey()) {
   const day = input.day || today;
   if (!validDay(day) || day > today) throw new Error('Выбери дату не позднее сегодняшней');
   const data = {type:input.type, day};
-  if (input.type === 'run' || input.type === 'football') {
-    data.distance = number(input.distance,'Расстояние',500,true);
+  if (input.type === 'run' || input.type === 'football' || input.type==='swim') {
+    data.distance = number(input.distance,'Расстояние',input.type==='swim'?100:500,true);
     data.minutes = number(input.minutes,'Время',1440,input.type === 'run');
     if (data.distance === null && data.minutes === null) throw new Error('Укажи расстояние или время пробежки');
   } else if (input.type === 'home') {
@@ -83,17 +99,27 @@ export function normalize(value) {
       const item=achievementCatalog.find(item=>item.id===raw.achievement);
       if(!item || raw.id!==`achievement:${item.id}`)continue;
       event={id:raw.id,day:raw.day,kind:'achievement',achievement:item.id,xp:item.xp};
+    } else if(raw.kind==='habit') {
+      const habit=habitRecord(raw.habit);if(!habit||raw.id!==`${raw.day}:habit:${habit.id}`)continue;
+      event={id:raw.id,day:raw.day,kind:'habit',habit,xp:habit.xp};
+    } else if(raw.kind==='habit-bonus') {
+      if(raw.id!==`${raw.day}:habit-bonus`||!Array.isArray(raw.required)||!raw.required.length||raw.required.length>100||raw.required.some(id=>typeof id!=='string'||!/^[A-Za-z0-9:_-]{1,100}$/.test(id))||new Set(raw.required).size!==raw.required.length)continue;
+      event={id:raw.id,day:raw.day,kind:'habit-bonus',required:[...raw.required],xp:dayBonus};
     } else continue;
     seen.add(event.id);
     events.push(event);
   }
-  return {base,events,plans:normalizePlans(value?.plans)};
+  const legacyIds=new Set(events.filter(event=>event.kind==='task').map(event=>event.day+':'+event.task));
+  const unique=events.filter(event=>event.kind!=='habit'||!legacyIds.has(event.day+':'+event.habit.id));
+  const done=new Map(),legacy=new Map();for(const event of unique){if(event.kind==='task'||event.kind==='habit'){if(!done.has(event.day))done.set(event.day,new Set());done.get(event.day).add(event.task||event.habit.id);}if(event.kind==='task'){if(!legacy.has(event.day))legacy.set(event.day,new Set());legacy.get(event.day).add(event.task);}}
+  const verified=unique.filter(event=>event.kind!=='habit-bonus'||(legacy.get(event.day)?.size!==tasks.length&&event.required.every(id=>done.get(event.day)?.has(id))));
+  return {base,events:verified,plans:normalizePlans(value?.plans),...(Array.isArray(value?.habits)?{habits:normalizeHabits(value.habits)}:{})};
 }
 export function migrate(legacy) {
   return {base:Number.isSafeInteger(legacy?.total) && legacy.total>=0 ? legacy.total : 0,events:[],plans:[]};
 }
 export function completed(value, day=dayKey()) {
-  return normalize(value).events.filter(event=>event.kind==='task'&&event.day===day).map(event=>event.task);
+  return [...new Set(normalize(value).events.filter(event=>['task','habit'].includes(event.kind)&&event.day===day).map(event=>event.task||event.habit.id))];
 }
 export function bonusDays(value) {
   const days = new Map();
@@ -107,10 +133,27 @@ export function totalXP(value) {
   const state=normalize(value);
   return roundXP(state.base + state.events.reduce((sum,event)=>sum+event.xp,0) + bonusDays(state).length*dayBonus);
 }
+export function dayHasBonus(value,day=dayKey()){const state=normalize(value);return bonusDays(state).includes(day)||state.events.some(event=>event.kind==='habit-bonus'&&event.day===day);}
+function settleHabitBonus(value,day){
+  const state=normalize(value);if(!Array.isArray(state.habits)||dayHasBonus(state,day))return state;
+  const active=dailyHabits(state),done=new Set(completed(state,day));
+  return active.length&&active.every(habit=>done.has(habit.id))?{...state,events:[...state.events,{id:`${day}:habit-bonus`,day,kind:'habit-bonus',required:active.map(habit=>habit.id),xp:dayBonus}]}:state;
+}
+export function addHabit(value,input,id,day=dayKey()){
+  const state=normalize(value),habits=habitDefinitions(state),habit=habitRecord({...input,id:'custom:'+id});
+  if(!habit||!validDay(day))throw new Error('Напиши название привычки и выбери 5 или 10 XP');
+  if(habits.length>=100)throw new Error('Можно сохранить до 100 привычек вместе с удалёнными');
+  if(habits.some(item=>item.id===habit.id))return state;
+  return settleHabitBonus({...state,habits:[...habits,{...habit,archived:false,updatedAt:Date.now()}]},day);
+}
+export function archiveHabit(value,id,archived=true,day=dayKey()){
+  const state=normalize(value),habits=habitDefinitions(state);if(!habits.some(item=>item.id===id)||!validDay(day))return state;
+  return settleHabitBonus({...state,habits:habits.map(habit=>habit.id===id?{...habit,archived,updatedAt:Date.now()}:habit)},day);
+}
 export function complete(value,id,day=dayKey()) {
-  const state=normalize(value);
-  const task=tasks.find(item=>item.id===id);
+  const state=normalize(value),task=dailyHabits(state).find(item=>item.id===id);
   if(!task || !validDay(day) || completed(state,day).includes(id)) return state;
+  if(Array.isArray(state.habits))return settleHabitBonus({...state,events:[...state.events,{id:`${day}:habit:${id}`,day,kind:'habit',habit:{id:task.id,title:task.title,xp:task.xp},xp:task.xp}]},day);
   return {...state,events:[...state.events,{id:`${day}:${id}`,day,kind:'task',task:id,xp:task.xp,rewardVersion:2}]};
 }
 export function addWorkout(value,input,id,today=dayKey()) {
@@ -122,6 +165,7 @@ export function addWorkout(value,input,id,today=dayKey()) {
 }
 const format=value=>new Intl.NumberFormat('ru',{maximumFractionDigits:2}).format(value);
 export function workoutDescription(data) {
+  if(data.type==='swim')return [data.distance!=null?`${format(data.distance*1000)} м`:null,`${format(data.minutes)} мин`,swimmingPace(data)].filter(Boolean).join(' · ');
   if(data.type==='other')return [data.source?.title||'Занятие с Garmin',data.distance!=null?`${format(data.distance)} км`:null,data.minutes!=null?`${format(data.minutes)} мин`:null].filter(Boolean).join(' · ');
   if(data.type==='run'||data.type==='football') return [data.distance!=null?`${format(data.distance)} км`:null,data.minutes!=null?`${format(data.minutes)} мин`:null,data.type==='run'?runningPace(data):null].filter(Boolean).join(' · ');
   if(data.type==='home') return `${exercises[data.exercise]} · ${data.reps.join(' / ')}`;
@@ -146,10 +190,11 @@ export function personalRecords(value) {
 export function workoutXP(data) {
   if(data.type==='other')return 0;
   if(data.type==='run') return roundXP(data.distance!=null ? data.distance*10 : data.minutes/2);
-  if(data.type==='football') return roundXP(data.minutes);
+  if(data.type==='football'||data.type==='swim') return roundXP(data.minutes);
   if(data.type==='home') return roundXP(data.reps.reduce((sum,rep)=>sum+rep,0)*(data.exercise==='pullups'?.5:.1));
   return roundXP(data.exercises.reduce((sum,entry)=>sum+entry.sets*2+entry.weight*entry.sets*entry.reps/100,0));
 }
+export function swimmingPace(data){if(!data.distance||!data.minutes)return null;const seconds=Math.round(data.minutes*60/(data.distance*10));return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} мин/100 м`;}
 export function runningPace(data) {
   if(!data.distance || !data.minutes) return null;
   const seconds=Math.round(data.minutes*60/data.distance);
@@ -198,7 +243,7 @@ export function removePlan(value,id) {
 export function shiftDay(day,offset){const date=new Date(day+'T12:00:00');date.setDate(date.getDate()+offset);return dayKey(date);}
 export function weekStart(day=dayKey()){const date=new Date(day+'T12:00:00');return shiftDay(day,-((date.getDay()+6)%7));}
 export function activeStreak(value,today=dayKey()){
- const days=new Set(normalize(value).events.filter(event=>['task','workout','plan'].includes(event.kind)).map(event=>event.day));
+ const days=new Set(normalize(value).events.filter(event=>['task','habit','workout','plan'].includes(event.kind)).map(event=>event.day));
  let cursor=days.has(today)?today:shiftDay(today,-1),current=0;
  while(days.has(cursor)){current++;cursor=shiftDay(cursor,-1);}
  let longest=0,run=0,previous;
@@ -210,7 +255,7 @@ export function weeklySummary(value,anchor=dayKey()){
  const events=state.events.filter(event=>days.includes(event.day)),workouts=events.filter(event=>event.kind==='workout');
  const groups=Object.fromEntries(Object.keys(muscleGroups).map(group=>[group,0]));let volume=0;
  for(const event of workouts)if(event.data.type==='gym')for(const entry of event.data.exercises){groups[entry.group]+=entry.sets;volume+=entry.weight*entry.sets*entry.reps;}
- return {start,days:days.map(day=>({day,workouts:workouts.filter(event=>event.day===day).length})),workouts:workouts.length,kilometers:roundXP(workouts.filter(event=>event.data.type==='run').reduce((sum,event)=>sum+(event.data.distance||0),0)),minutes:roundXP(workouts.filter(event=>['run','football'].includes(event.data.type)).reduce((sum,event)=>sum+(event.data.minutes||0),0)),volume,groups};
+ return {start,days:days.map(day=>({day,workouts:workouts.filter(event=>event.day===day).length})),workouts:workouts.length,kilometers:roundXP(workouts.filter(event=>event.data.type==='run').reduce((sum,event)=>sum+(event.data.distance||0),0)),minutes:roundXP(workouts.filter(event=>['run','football','swim'].includes(event.data.type)).reduce((sum,event)=>sum+(event.data.minutes||0),0)),volume,groups};
 }
 // Existing achievement IDs and rewards remain stable for previously awarded XP.
 export const achievementCatalog=[
@@ -247,7 +292,7 @@ function strengthMovement(entry){
 }
 export function achievements(value){
  const state=normalize(value),records=personalRecords(state),workouts=state.events.filter(event=>event.kind==='workout');
- const metrics={workouts:records.workouts,fullDays:bonusDays(state).length,runTotal:records.kilometers,runLongest:0,streak:activeStreak(state).longest,gymCount:0,pushupsTotal:0,pushupsBest:0,pullupsBest:0,bench:0,squat:0};
+ const metrics={workouts:records.workouts,fullDays:new Set([...bonusDays(state),...state.events.filter(event=>event.kind==='habit-bonus').map(event=>event.day)]).size,runTotal:records.kilometers,runLongest:0,streak:activeStreak(state).longest,gymCount:0,pushupsTotal:0,pushupsBest:0,pullupsBest:0,bench:0,squat:0};
  for(const {data} of workouts){
   if(data.type==='run')metrics.runLongest=Math.max(metrics.runLongest,data.distance||0);
   if(data.type==='home'){
@@ -263,7 +308,7 @@ export function achievements(value){
  return achievementCatalog.map(item=>({...item,current:metrics[item.metric],unlocked:metrics[item.metric]+1e-9>=item.target,awarded:awarded.has(item.id)}));
 }
 export function awardAchievements(value,today=dayKey()){
- const state=normalize(value);
+ const state=settleHabitBonus(value,today);
  const earned=achievements(state).filter(item=>item.unlocked&&!item.awarded).map(item=>({id:`achievement:${item.id}`,day:today,kind:'achievement',achievement:item.id,xp:item.xp}));
  return {...state,events:[...state.events,...earned]};
 }

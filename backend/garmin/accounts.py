@@ -46,12 +46,42 @@ def rounded(value):
     return math.floor(value*10+0.5)/10
 
 
+HABIT_DEFAULTS={'warmup':('Размяться',5),'shower':('Принять душ',5),'breakfast':('Позавтракать',5),'reading':('Почитать',10)}
+
+
+def habit_record(raw):
+    if not isinstance(raw,dict) or not isinstance(raw.get('id'),str) or not re.fullmatch(r'[A-Za-z0-9:_-]{1,100}',raw['id']):raise AccountError('invalid_progress')
+    identity=raw['id']
+    if identity in HABIT_DEFAULTS:title,xp=HABIT_DEFAULTS[identity]
+    else:
+        title=re.sub(r'[\x00-\x1f\x7f]','',raw.get('title','')).strip()[:80] if isinstance(raw.get('title'),str) else ''
+        xp=raw.get('xp')
+        if not identity.startswith('custom:') or not title or type(xp) not in (int,float) or xp not in (5,10):raise AccountError('invalid_progress')
+    return {'id':identity,'title':title,'xp':xp}
+
+
+def legacy_bonus_days(events):
+    tasks={}
+    for event in events:
+        if event['kind']=='task':tasks.setdefault(event['day'],set()).add(event['task'])
+    return {day for day,items in tasks.items() if len(items)==4}
+
+
 def validate_state(raw, today):
     if not isinstance(raw, dict) or not isinstance(raw.get('events'),list) or len(raw['events']) > 20000:
         raise AccountError('invalid_progress')
     state = {'base':number(raw.get('base',0),0,10000000,True),'events':[], 'plans':raw.get('plans',[])}
     if not isinstance(state['plans'],list) or len(state['plans'])>5000:
         raise AccountError('invalid_progress')
+    if 'habits' in raw:
+        if not isinstance(raw['habits'],list) or len(raw['habits'])>100:raise AccountError('invalid_progress')
+        habits=[];ids=set()
+        for item in raw['habits']:
+            habit=habit_record(item)
+            if habit['id'] in ids:raise AccountError('invalid_progress')
+            ids.add(habit['id']);updated=number(item.get('updatedAt',0),0,2**53-1,True)
+            habits.append({**habit,'archived':item.get('archived') is True,'updatedAt':updated})
+        state['habits']=habits
     tasks={'warmup':5,'shower':5,'breakfast':5,'reading':10}
     sizes={'small':5,'medium':10,'large':20}
     seen=set()
@@ -74,14 +104,14 @@ def validate_state(raw, today):
             data=event.get('data')
             if not isinstance(data,dict) or data.get('day')!=day:raise AccountError('invalid_progress')
             sport=data.get('type')
-            if sport in ('run','football','other'):
+            if sport in ('run','football','swim','other'):
                 distance=data.get('distance');minutes=data.get('minutes')
-                if distance is not None:number(distance,0.000001,5000 if sport=='other' else 500)
+                if distance is not None:number(distance,0.000001,5000 if sport=='other' else 100 if sport=='swim' else 500)
                 if minutes is not None:number(minutes,0.000001,10080 if sport=='other' else 1440)
                 if distance is None and minutes is None:raise AccountError('invalid_progress')
-                if sport=='football' and minutes is None:raise AccountError('invalid_progress')
+                if sport in ('football','swim') and minutes is None:raise AccountError('invalid_progress')
                 if sport=='other' and not isinstance(data.get('source'),dict):raise AccountError('invalid_progress')
-                xp=0 if sport=='other' else minutes if sport=='football' else distance*10 if distance is not None else minutes/2
+                xp=0 if sport=='other' else minutes if sport in ('football','swim') else distance*10 if distance is not None else minutes/2
             elif sport=='home':
                 reps=data.get('reps')
                 if data.get('exercise') not in ('pushups','pullups','squats') or not isinstance(reps,list) or not 1<=len(reps)<=30:raise AccountError('invalid_progress')
@@ -95,13 +125,28 @@ def validate_state(raw, today):
                     weight=number(entry.get('weight'),0,1000);sets=number(entry.get('sets'),1,30,True);reps=number(entry.get('reps'),1,1000,True)
                     xp+=sets*2+weight*sets*reps/100
             else:raise AccountError('invalid_progress')
-            if event.get('xpRule')!='volume-v1':xp={'run':50,'football':50,'home':40,'gym':60,'other':0}[sport]
+            if event.get('xpRule')!='volume-v1':xp={'run':50,'football':50,'home':40,'gym':60,'other':0,'swim':0}[sport]
+        elif kind=='habit':
+            habit=habit_record(event.get('habit'))
+            if identity!=day+':habit:'+habit['id']:raise AccountError('invalid_progress')
+            event['habit']=habit;xp=habit['xp']
+        elif kind=='habit-bonus':
+            required=event.get('required')
+            if identity!=day+':habit-bonus' or not isinstance(required,list) or not 1<=len(required)<=100 or any(not isinstance(i,str) or not re.fullmatch(r'[A-Za-z0-9:_-]{1,100}',i) for i in required) or len(set(required))!=len(required):raise AccountError('invalid_progress')
+            xp=20
         elif kind=='achievement':
             badge=badges.get(event.get('achievement'))
             if not badge or identity!='achievement:'+badge['id']:raise AccountError('invalid_progress')
             xp=badge['xp']
         else:raise AccountError('invalid_progress')
         event['xp']=rounded(xp);state['events'].append(event)
+    old_tasks={(e['day'],e['task']) for e in state['events'] if e['kind']=='task'}
+    state['events']=[e for e in state['events'] if e['kind']!='habit' or (e['day'],e['habit']['id']) not in old_tasks]
+    done={}
+    for event in state['events']:
+        if event['kind'] in ('task','habit'):done.setdefault(event['day'],set()).add(event.get('task') or event['habit']['id'])
+    legacy=legacy_bonus_days(state['events'])
+    state['events']=[e for e in state['events'] if e['kind']!='habit-bonus' or (e['day'] not in legacy and all(i in done.get(e['day'],set()) for i in e['required']))]
     # Only actual completed records can justify an achievement.
     metrics=achievement_metrics(state)
     state['events']=[e for e in state['events'] if e['kind']!='achievement' or metrics[badges[e['achievement']]['metric']]+1e-9>=badges[e['achievement']]['target']]
@@ -113,12 +158,12 @@ def achievement_metrics(state):
     tasks={}
     for e in state['events']:
         if e['kind']=='task':tasks.setdefault(e['day'],set()).add(e['task'])
-    days=sorted({e['day'] for e in state['events'] if e['kind']!='achievement'})
+    days=sorted({e['day'] for e in state['events'] if e['kind'] not in ('achievement','habit-bonus')})
     streak=longest=0;previous=None
     for day in days:
         streak=streak+1 if previous and (date.fromisoformat(day)-date.fromisoformat(previous)).days==1 else 1
         longest=max(longest,streak);previous=day
-    result=dict(workouts=len(workouts),fullDays=sum(len(v)==4 for v in tasks.values()),runTotal=0,runLongest=0,streak=longest,gymCount=0,pushupsTotal=0,pushupsBest=0,pullupsBest=0,bench=0,squat=0)
+    result=dict(workouts=len(workouts),fullDays=len(legacy_bonus_days(state['events'])|{e['day'] for e in state['events'] if e['kind']=='habit-bonus'}),runTotal=0,runLongest=0,streak=longest,gymCount=0,pushupsTotal=0,pushupsBest=0,pullupsBest=0,bench=0,squat=0)
     aliases={'bench':{'жим лежа','жим штанги лежа','жим лежа со штангой','горизонтальный жим штанги','bench press','barbell bench press'},'squat':{'присед','приседания','присед со штангой','приседания со штангой','присед со штангой на спине','приседания со штангой на спине','barbell squat','back squat'}}
     for data in workouts:
         if data['type']=='run':
@@ -136,10 +181,8 @@ def achievement_metrics(state):
 
 
 def earned(state,start,end):
-    events=[e for e in state['events'] if start<=e['day']<=end];tasks={}
-    for event in events:
-        if event['kind']=='task':tasks.setdefault(event['day'],set()).add(event['task'])
-    return rounded(sum(e['xp'] for e in events)+20*sum(len(v)==4 for v in tasks.values()))
+    events=[e for e in state['events'] if start<=e['day']<=end]
+    return rounded(sum(e['xp'] for e in events)+20*len(legacy_bonus_days(events)))
 
 
 def level_for(total):

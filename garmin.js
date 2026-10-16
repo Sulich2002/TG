@@ -25,11 +25,11 @@ export function garminSource(raw){
 const running=new Set(['running','trail_running','treadmill_running','track_running','street_running','indoor_running','virtual_run','ultra_run']);
 export function garminWorkout(activity){
   if(!validDay(activity?.day))return null;
-  const type=running.has(activity.typeKey)?'run':activity.typeKey==='soccer'?'football':'other';
+  const type=running.has(activity.typeKey)?'run':activity.typeKey==='soccer'?'football':['lap_swimming','open_water_swimming','swimming','pool_swimming'].includes(activity.typeKey)?'swim':'other';
   const source=garminSource({provider:'garmin',id:activity.activityId,title:activity.title,typeKey:activity.typeKey,...Object.fromEntries(['averageHeartRate','maximumHeartRate','movingDurationSeconds','elapsedDurationSeconds','heartRateSamples'].map(key=>[key,activity[key]]))});if(!source)return null;
-  const meters=finite(activity.distanceMeters,0,type==='other'?5000000:500000),seconds=finite(activity.durationSeconds,0,type==='other'?604800:86400);
+  const meters=finite(activity.distanceMeters,0,type==='other'?5000000:500000),seconds=finite(type==='swim'&&activity.movingDurationSeconds>0?activity.movingDurationSeconds:activity.durationSeconds,0,type==='other'?604800:86400);
   const distance=meters>0?meters/1000:null,minutes=seconds>0?seconds/60:null;
-  if((distance===null&&minutes===null)||(type==='football'&&minutes===null))return null;
+  if((distance===null&&minutes===null)||(['football','swim'].includes(type)&&minutes===null))return null;
   return {type,day:activity.day,distance,minutes,source};
 }
 export async function garminRequest(url,path,{token,password,method='GET'}={}){

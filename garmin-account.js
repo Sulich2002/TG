@@ -1,4 +1,4 @@
-import {garminURL} from './garmin.js?v=0.9.0';
+import {garminURL} from './garmin.js?v=0.10.0';
 const $=id=>document.getElementById(id);
 const errors={garmin_credentials:'Проверь email и пароль Garmin.',garmin_login_failed:'Garmin не подтвердил вход. Проверь пароль и код; иногда Garmin временно ограничивает вход с сервера.',garmin_rate_limited:'Garmin ограничил попытки. Повтори позже.',garmin_login_expired:'Время входа истекло. Начни подключение заново.',garmin_login_cancelled:'Вход отменён.',garmin_busy:'Сейчас выполняется другая операция Garmin. Попробуй чуть позже.',garmin_job_missing:'Подключение прервалось. Начни вход заново.',garmin_mfa_invalid:'Введи код подтверждения из 6–10 цифр.',garmin_already_linked:'Этот Garmin уже связан с другим аккаунтом приложения.',garmin_account_mismatch:'К этому аккаунту приложения уже привязан другой Garmin. Войди в первоначальный аккаунт Garmin.',account_required:'Войди в аккаунт приложения заново.',not_found:'Для подключения часов обнови коннектор на сервере.'};
 export function setupAccountGarmin({onDialog,onConnected,notify}){

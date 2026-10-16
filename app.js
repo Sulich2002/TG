@@ -1,7 +1,7 @@
-import {setupFriends} from './friends-ui.js?v=0.9.0';
-import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.9.0';
-import {normalizeProfile} from './profile.js?v=0.9.0';
-import { tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.9.0';
+import {setupFriends} from './friends-ui.js?v=0.10.0';
+import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.10.0';
+import {normalizeProfile} from './profile.js?v=0.10.0';
+import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.10.0';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
 let friends;
@@ -41,7 +41,7 @@ function navigate(panel) {
 function renderHistory() {
   renderCalendar();
   const events=[...state.events,...bonusDays(state).map(day=>({id:day+':bonus',day,kind:'bonus',xp:dayBonus}))].reverse().sort((a,b)=>b.day.localeCompare(a.day));
-  const filtered=events.filter(event=>(historyDay===null||event.day===historyDay)&&(historyFilter==='all'||(historyFilter==='task'?['task','plan','bonus'].includes(event.kind):event.kind==='workout')));
+  const filtered=events.filter(event=>(historyDay===null||event.day===historyDay)&&(historyFilter==='all'||(historyFilter==='task'?['task','habit','plan','bonus','habit-bonus'].includes(event.kind):event.kind==='workout')));
   const container=$('history-list');container.replaceChildren();
   if(!filtered.length) {
     const empty=element('div',null,'empty-state');empty.innerHTML=icon('history');empty.append(element('h2',historyFilter==='workout'?'Пока без тренировок':'Твоя история впереди'),element('p','Отметь дело или запиши занятие. Здесь появятся дата, результат и полученный опыт.'));container.append(empty);return;
@@ -51,9 +51,9 @@ function renderHistory() {
     if(event.day!==previous){container.append(element('h2',new Intl.DateTimeFormat('ru',{day:'numeric',month:'long',year:'numeric'}).format(new Date(event.day+'T12:00:00')),'history-date'));previous=event.day;}
     const task=tasks.find(task=>task.id===event.task),badge=achievementCatalog.find(item=>item.id===event.achievement);
     const row=element('article',null,'history-item'),symbol=element('span',null,'history-icon');
-    symbol.innerHTML=icon(event.kind==='workout'?'activity':event.kind==='bonus'?'sun':event.kind==='achievement'?'award':(task?.icon||'check'));
-    const content=element('div');content.append(element('b',event.kind==='workout'?workoutTypes[event.data.type]:event.kind==='bonus'?'Все дела на сегодня выполнены':event.kind==='plan'?event.plan.title:event.kind==='achievement'?badge.title:task.title));
-    content.append(element('small',event.kind==='workout'?workoutDescription(event.data):event.kind==='bonus'?'Бонус за полный набор':event.kind==='plan'?'Свой план · '+planSizes[event.plan.size].title:event.kind==='achievement'?'Достижение · '+badge.description:'Базовое дело: разминка, душ, завтрак или чтение'));
+    symbol.innerHTML=icon(event.kind==='workout'?'activity':['bonus','habit-bonus'].includes(event.kind)?'sun':event.kind==='achievement'?'award':(task?.icon||'check'));
+    const content=element('div');content.append(element('b',event.kind==='workout'?workoutTypes[event.data.type]:['bonus','habit-bonus'].includes(event.kind)?'Все привычки на сегодня выполнены':event.kind==='habit'?event.habit.title:event.kind==='plan'?event.plan.title:event.kind==='achievement'?badge.title:task.title));
+    content.append(element('small',event.kind==='workout'?workoutDescription(event.data):['bonus','habit-bonus'].includes(event.kind)?'Бонус за полный набор':event.kind==='habit'?'Ежедневная привычка':event.kind==='plan'?'Свой план · '+planSizes[event.plan.size].title:event.kind==='achievement'?'Достижение · '+badge.description:'Базовое дело: разминка, душ, завтрак или чтение'));
     if(event.kind==='workout'&&event.data.source?.provider==='garmin')appendGarminDetails(content,event.data.source);
     row.append(symbol,content,element('strong',`+${formatXP(event.xp)} XP`));container.append(row);
   }
@@ -70,27 +70,31 @@ function renderRecords() {
   for(const record of records.gym){
     const card=element('article',null,'record'),top=element('div');top.append(element('h3',record.exercise),element('b',`${record.bestWeight} кг`));card.append(top,element('p',`${muscleGroups[record.group]} · максимальный записанный вес. Первый: ${record.firstWeight} кг, последний: ${record.latestWeight} кг. Наибольший объём: ${record.bestVolume} кг.`));container.append(card);
   }
+  const swims=state.events.filter(event=>event.kind==='workout'&&event.data.type==='swim');
+  if(swims.length){const card=element('article',null,'record'),top=element('div'),meters=swims.reduce((sum,event)=>sum+(event.data.distance||0)*1000,0),minutes=swims.reduce((sum,event)=>sum+event.data.minutes,0);top.append(element('h3','Плавание за всё время'),element('b',`${formatXP(meters)} м`));card.append(top,element('p',`Занятий: ${swims.length} · ${formatXP(minutes)} мин. Самая длинная дистанция: ${formatXP(Math.max(...swims.map(event=>(event.data.distance||0)*1000)))} м.`));container.append(card);}
   if(state.base>0)container.append(element('p',`Сохранено ${state.base} XP из раннего прототипа. Эти очки не считаются реальными тренировками.`,'gentle-note'));
 }
 function render() {
   state=normalize(state);renderedDay=dayKey();
-  const total=totalXP(state),{level,current:xp,required}=levelProgress(total),done=completed(state);
+  const total=totalXP(state),{level,current:xp,required}=levelProgress(total),done=completed(state),habits=dailyHabits(state),earnedBonus=dayHasBonus(state);
   $('date').textContent=new Intl.DateTimeFormat('ru',{day:'numeric',month:'long',weekday:'long'}).format(new Date()).toUpperCase();
   $('summary-level').textContent=`Уровень ${level} · ${formatXP(xp)} / ${required} XP`;$('level').textContent=`Уровень ${level} · ${level<8?'Новичок':level<20?'В ритме':'Уверенный шаг'}`;$('xp-text').textContent=`${formatXP(xp)} / ${required} XP`;$('xp-bar').style.width=`${xp/required*100}%`;$('total-xp').textContent=formatXP(total);avatar?.setLevel(level);$('body-stage').textContent=level<8?'НАЧАЛО ПУТИ':level<20?'ВХОДИШЬ В РИТМ':level<40?'НАБИРАЕШЬ ФОРМУ':'УВЕРЕННЫЙ РИТМ';
-  $('daily-count').textContent=`${done.length} / ${tasks.length}`;
-  $('bonus-card').classList.toggle('earned',done.length===tasks.length);
-  $('bonus-title').textContent=done.length===tasks.length?'Бонус получен. Ты справился!':'Бонус за весь набор';
-  $('bonus-note').textContent=done.length===tasks.length?'Завтра будет новый день. Опыт останется.':'Выполни четыре дела в течение дня';
-  $('daily-tasks').replaceChildren(...tasks.map(task=>{
+  $('daily-count').textContent=`${habits.filter(habit=>done.includes(habit.id)).length} / ${habits.length}`;
+  $('bonus-card').classList.toggle('earned',earnedBonus);
+  $('bonus-title').textContent=earnedBonus?'Бонус получен. Ты справился!':'Бонус за весь набор';
+  $('bonus-note').textContent=earnedBonus?'Завтра будет новый день. Опыт останется.':habits.length?'Выполни свой набор привычек за день':'Добавь привычки, чтобы собрать свой набор';
+  $('daily-tasks').replaceChildren(...habits.map(task=>{
     const isDone=done.includes(task.id),button=element('button',null,`daily-task${isDone?' done':''}`);
-    const shownXP=state.events.find(event=>event.kind==='task'&&event.task===task.id&&event.day===dayKey())?.xp??task.xp;
+    const shownXP=state.events.find(event=>((event.kind==='task'&&event.task===task.id)||(event.kind==='habit'&&event.habit.id===task.id))&&event.day===dayKey())?.xp??task.xp;
     button.disabled=isDone;button.setAttribute('aria-label',`${isDone?'Выполнено':'Выполнить'}: ${task.title}`);
-    button.innerHTML=`<span class="task-symbol">${icon(task.icon)}</span><span class="daily-label"><b>${task.title}</b><small>${task.description}</small></span><span class="task-end"><b>+${shownXP} XP</b><span class="task-check">${isDone?icon('check'):''}</span></span>`;
+    const symbol=element('span',null,'task-symbol');symbol.innerHTML=icon(task.icon);
+    const label=element('span',null,'daily-label');label.append(element('b',task.title),element('small',task.description));
+    const end=element('span',null,'task-end'),check=element('span',null,'task-check');if(isDone)check.innerHTML=icon('check');end.append(element('b',`+${shownXP} XP`),check);button.append(symbol,label,end);
     button.addEventListener('click',()=>{
       const next=complete(state,task.id),gain=totalXP(next)-totalXP(state);
       if(persist(next,`Дело сделано! +${formatXP(gain)} XP${gain>task.xp?' — с бонусом за день':''}`)) window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
     });return button;
-  }));renderPlans();renderHistory();renderRecords();renderProgress();renderProfile();
+  }));if(!habits.length)$('daily-tasks').append(element('p','Добавь первую привычку через «Настроить».','plans-empty'));renderPlans();renderHistory();renderRecords();renderProgress();renderProfile();
 }
 function renderProfile(){
   document.querySelector('main').hidden=!profile;document.querySelector('.bottom-nav').hidden=!profile;
@@ -170,11 +174,21 @@ function renderPlans(){
 async function ensureAvatar(){
   if(avatar){avatar.setLevel(levelProgress(totalXP(state)).level);avatar.setActive(true);return;}
   if(avatarPromise)return;
-  avatarPromise=import('./avatar.js?v=0.9.0').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
+  avatarPromise=import('./avatar.js?v=0.10.0').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
 }
 $('add-plan').addEventListener('click',()=>{$('plan-form').reset();$('plan-error').textContent='';$('plan-dialog').showModal();updateBack();});
 $('close-plan').addEventListener('click',()=>$('plan-dialog').close());$('plan-dialog').addEventListener('close',updateBack);
 $('plan-form').addEventListener('submit',event=>{event.preventDefault();try{const next=addPlan(state,Object.fromEntries(new FormData(event.currentTarget)),crypto.randomUUID());if(persist(next,'План добавлен'))$('plan-dialog').close();}catch(error){$('plan-error').textContent=error.message;}});
+function renderHabitManager(){
+  const definitions=habitDefinitions(state);
+  for(const [id,archived] of [['habit-active-list',false],['habit-removed-list',true]]){
+    const list=$(id);list.replaceChildren(...definitions.filter(habit=>habit.archived===archived).map(habit=>{const row=element('div',null,'habit-manager-row'),label=element('span');label.append(element('b',habit.title),element('small',`+${habit.xp} XP каждый день`));const button=element('button',archived?'Вернуть':'Удалить','garmin-action-button');button.type='button';button.setAttribute('aria-label',`${archived?'Вернуть':'Удалить'} привычку: ${habit.title}`);button.addEventListener('click',()=>{if(persist(archiveHabit(state,habit.id,!archived),archived?'Привычка возвращена':'Привычка убрана из списка'))renderHabitManager();});row.append(label,button);return row;}));
+  }
+  $('habit-removed').hidden=!definitions.some(habit=>habit.archived);
+}
+$('manage-habits').addEventListener('click',()=>{$('habit-form').reset();$('habit-error').textContent='';renderHabitManager();$('habit-dialog').showModal();updateBack();});
+$('close-habits').addEventListener('click',()=>$('habit-dialog').close());$('habit-dialog').addEventListener('close',updateBack);
+$('habit-form').addEventListener('submit',event=>{event.preventDefault();$('habit-error').textContent='';try{if(persist(addHabit(state,{title:$('habit-name').value,xp:Number($('habit-xp').value)},crypto.randomUUID()),'Ежедневная привычка добавлена')){$('habit-form').reset();renderHabitManager();}}catch(error){$('habit-error').textContent=error.message;}});
 let gymEntryId=0;
 function appendGymExercise(group){
   if(group.querySelectorAll('.gym-exercise').length>=15){notify('В этой группе уже 15 упражнений');return;}
@@ -193,11 +207,12 @@ function appendGymGroup(){
 }
 function readWorkout(){
   const input={...Object.fromEntries(new FormData($('workout-form'))),type:workoutType};
+  if(workoutType==='swim'){input.distance=input.meters?Number(String(input.meters).replace(',','.'))/1000:null;delete input.meters;}
   if(workoutType==='gym')input.exercises=[...document.querySelectorAll('.gym-group')].flatMap(group=>[...group.querySelectorAll('.gym-exercise')].map(entry=>({group:group.querySelector('.gym-group-select').value,...Object.fromEntries([...entry.querySelectorAll('[data-field]')].map(input=>[input.dataset.field,input.value]))})));
   return input;
 }
 function previewWorkout(){
-  const rules={run:'10 XP/км; без расстояния — 1 XP за 2 мин.',football:'1 XP за минуту. Расстояние не начисляется повторно.',home:$('exercise')?.value==='pullups'?'1 XP за 2 подтягивания.':'1 XP за 10 повторений.',gym:'2 XP за подход + 1 XP за 100 кг объёма.'};
+  const rules={swim:'1 XP за минуту плавания. Метры сохраняются без повторного XP.',run:'10 XP/км; без расстояния — 1 XP за 2 мин.',football:'1 XP за минуту. Расстояние не начисляется повторно.',home:$('exercise')?.value==='pullups'?'1 XP за 2 подтягивания.':'1 XP за 10 повторений.',gym:'2 XP за подход + 1 XP за 100 кг объёма.'};
   try{const data=workoutData(readWorkout());$('workout-reward').textContent=`Награда: +${formatXP(workoutXP(data))} XP · ${rules[workoutType]}`;}
   catch{$('workout-reward').textContent=rules[workoutType]+' Заполни поля — увидишь свою награду.';}
 }
@@ -205,7 +220,9 @@ $('workout-fields').addEventListener('input',previewWorkout);$('workout-fields')
 function openWorkout(type) {
   workoutType=type;workoutId=crypto.randomUUID();$('workout-title').textContent=workoutTypes[type];$('workout-form').reset();$('workout-day').value=dayKey();$('workout-day').max=dayKey();$('form-error').textContent='';$('save-workout').disabled=false;
   const fields=$('workout-fields');
-  if(type==='run'||type==='football') {
+  if(type==='swim'){
+    fields.innerHTML='<label for="swim-minutes">Время плавания, минуты</label><input id="swim-minutes" name="minutes" type="number" min="0.1" max="1440" step="0.1" inputmode="decimal" required placeholder="Например, 30"><label for="swim-meters">Расстояние, метры (необязательно)</label><input id="swim-meters" name="meters" type="number" min="1" max="100000" step="1" inputmode="numeric" placeholder="Например, 1000"><p class="field-hint">Укажи время плавания без длинных перерывов. При наличии расстояния история покажет темп на 100 м.</p>';
+  }else if(type==='run'||type==='football') {
     fields.innerHTML=`<label for="distance">Расстояние, км ${type==='football'?'(необязательно)':''}</label><input id="distance" name="distance" type="number" min="0.01" max="500" step="0.01" inputmode="decimal" placeholder="Например, 3"><label for="minutes">Время, минуты ${type==='run'?'(необязательно)':''}</label><input id="minutes" name="minutes" type="number" min="0.1" max="1440" step="0.1" inputmode="decimal" placeholder="Например, 30" ${type==='football'?'required':''}><p class="field-hint">${type==='run'?'Можно указать только время или только расстояние.':'Расстояние можно оставить пустым.'}</p>`;
   } else if(type==='home') {
     fields.innerHTML=`<label for="exercise">Упражнение</label><select id="exercise" name="exercise">${Object.entries(exercises).map(([value,title])=>`<option value="${value}">${title}</option>`).join('')}</select><label for="reps">Повторения по подходам</label><input id="reps" name="reps" required maxlength="180" placeholder="15, 12, 10"><p class="field-hint">Впиши повторения через запятую: 15, 12, 10 — это три подхода.</p>`;

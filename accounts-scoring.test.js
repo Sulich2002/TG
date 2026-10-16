@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
-import {achievementCatalog,normalize,complete,addWorkout,awardAchievements,totalXP,bonusDays,addPlan,completePlan} from './progress.js';
+import {achievementCatalog,normalize,complete,addWorkout,awardAchievements,totalXP,bonusDays,addPlan,completePlan,addHabit,archiveHabit,dailyHabits} from './progress.js';
 
 test('server reward catalogue and XP agree with the app for routines, plans, workouts and achievements',async()=>{
  const expected=achievementCatalog.map(({id,metric,target,xp})=>({id,metric,target,xp}));
@@ -11,8 +11,9 @@ test('server reward catalogue and XP agree with the app for routines, plans, wor
  let state=normalize({base:200,events:[]});
  for(const task of ['warmup','shower','breakfast','reading'])state=complete(state,task,today);
  state=addPlan(state,{title:'Учёба',size:'medium'},'plan-fixture',today);state=completePlan(state,'plan-fixture',today);states.push(awardAchievements(state,today));
- const inputs=[{type:'run',distance:21.0975,minutes:125},{type:'run',minutes:27},{type:'football',minutes:90},{type:'home',exercise:'pushups',reps:[50,25,12]},{type:'home',exercise:'pullups',reps:[15,10]},{type:'gym',exercises:[{group:'chest',exercise:'Жим штанги лёжа',weight:60,sets:3,reps:8},{group:'legs',exercise:'Присед со штангой',weight:100,sets:4,reps:8}]}];
+ const inputs=[{type:'run',distance:21.0975,minutes:125},{type:'run',minutes:27},{type:'football',minutes:90},{type:'swim',minutes:30,distance:1.2},{type:'home',exercise:'pushups',reps:[50,25,12]},{type:'home',exercise:'pullups',reps:[15,10]},{type:'gym',exercises:[{group:'chest',exercise:'Жим штанги лёжа',weight:60,sets:3,reps:8},{group:'legs',exercise:'Присед со штангой',weight:100,sets:4,reps:8}]}];
  for(const [index,input] of inputs.entries())states.push(awardAchievements(addWorkout(null,{...input,day:today},'fixture-'+index,today),today));
+ let custom=addHabit(null,{title:'Прогулка',xp:5},'walk',today);custom=archiveHabit(custom,'reading',true,today);for(const habit of dailyHabits(custom))custom=complete(custom,habit.id,today);states.push(awardAchievements(custom,today));
  const result=spawnSync('python3',['-c',`import sys,json
 sys.path.insert(0,'backend/garmin')
 from accounts import validate_state,earned

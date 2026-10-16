@@ -1,4 +1,4 @@
-import {garminHealth} from './garmin.js?v=0.9.0';
+import {garminHealth} from './garmin.js?v=0.10.0';
 
 export const healthMetrics={
   sleep:{label:'Сон',field:'sleepSeconds',section:'sleep',unit:'ч',description:'Продолжительность ночного сна. Дата — утро после этой ночи.'},
