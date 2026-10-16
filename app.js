@@ -1,11 +1,12 @@
-import {setupCoach} from './coach-ui.js?v=0.13.2';
-import {setupFriends} from './friends-ui.js?v=0.13.2';
-import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.13.2';
-import {normalizeProfile} from './profile.js?v=0.13.2';
-import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.13.2';
+import {setupHabitTracker} from './habit-tracker-ui.js?v=0.14.0';
+import {setupCoach} from './coach-ui.js?v=0.14.0';
+import {setupFriends} from './friends-ui.js?v=0.14.0';
+import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.14.0';
+import {normalizeProfile} from './profile.js?v=0.14.0';
+import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.14.0';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
-let friends,coach;
+let friends,coach,habitTracker;
 let state;
 try {
   const saved=localStorage.getItem(storageKey);
@@ -31,12 +32,13 @@ function updateBack() {
 }
 function navigate(panel) {
   selectedPanel=panel;
-  for(const name of ['today','character','workout','history','progress'])$('panel-'+name).hidden=name!==panel;
+  for(const name of ['today','habits','character','workout','history','progress'])$('panel-'+name).hidden=name!==panel;
   for(const button of document.querySelectorAll('[data-panel]')) {
     const active=button.dataset.panel===panel;button.classList.toggle('active',active);
     if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
   }
   if(panel==='character')ensureAvatar();else avatar?.setActive(false);
+  if(panel==='habits')habitTracker?.render();
   updateBack();coach?.updateVisibility();window.scrollTo({top:0,behavior:'instant'});
 }
 function renderHistory() {
@@ -96,7 +98,7 @@ function render() {
       const next=complete(state,task.id),gain=totalXP(next)-totalXP(state);
       if(persist(next,`Дело сделано! +${formatXP(gain)} XP${gain>task.xp?' — с бонусом за день':''}`)) window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
     });return button;
-  }));if(!habits.length)$('daily-tasks').append(element('p','Добавь первую привычку через «Настроить».','plans-empty'));renderPlans();renderHistory();renderRecords();renderProgress();renderProfile();
+  }));if(!habits.length)$('daily-tasks').append(element('p','Добавь первую привычку через «Настроить».','plans-empty'));renderPlans();renderHistory();renderRecords();renderProgress();renderProfile();habitTracker?.render();
 }
 function renderProfile(){
   document.querySelector('main').hidden=!profile;document.querySelector('.bottom-nav').hidden=!profile;
@@ -184,7 +186,7 @@ async function ensureAvatar(){
   }
   if(avatarPromise)return;
   $('avatar-viewport').replaceChildren();
-  avatarPromise=import('./avatar.js?v=0.13.2').then(async({createAvatar})=>{
+  avatarPromise=import('./avatar.js?v=0.14.0').then(async({createAvatar})=>{
     avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});
     // The profile can change while the initial geometry is downloading.
     await avatar.setProfile(profile);avatar.setLevel(levelProgress(totalXP(state)).level);
@@ -285,3 +287,5 @@ friends=setupFriends({getState:()=>state,getProfile:()=>profile,onNavigate:navig
 $('welcome-login').addEventListener('click',()=>friends.login());
 
 coach=setupCoach({getState:()=>state,onNavigate:navigate,onDialog:updateBack,notify});
+
+habitTracker=setupHabitTracker({getState:()=>state,onManage:()=>$('manage-habits').click(),onNavigate:navigate,onDialog:updateBack});habitTracker.render();
