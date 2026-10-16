@@ -58,7 +58,12 @@ export async function createAvatar(container,initialLevel=1,initialProfile={sex:
     else{skin.userData={minimum,height,isFemale:profile.sex==='female'?1:0};}
     const headTop=Math.max(...meta.body.map(index=>positions[index*3+1]));
     const hairLength=profile.sex==='female'?3.4:.70;
-    const croppedHair=[];for(let i=0;i<meta.hair.length;i+=3){const ids=meta.hair.slice(i,i+3);if(ids.reduce((sum,id)=>sum+positions[id*3+1],0)/3>headTop-hairLength)croppedHair.push(...ids);}
+    const croppedHair=[];
+    for(let i=0;i<meta.hair.length;i+=3){
+      const ids=meta.hair.slice(i,i+3);
+      const inFace=profile.sex==='female'&&ids.some(id=>Math.abs(positions[id*3])<.65&&positions[id*3+2]>.8&&positions[id*3+1]<headTop-.35);
+      if(!inFace&&ids.reduce((sum,id)=>sum+positions[id*3+1],0)/3>headTop-hairLength)croppedHair.push(...ids);
+    }
     hairGeometry.setAttribute('position',new THREE.BufferAttribute(positions.slice(),3));hairGeometry.setIndex(croppedHair);hairGeometry.computeVertexNormals();hairGeometry.computeBoundingSphere();
     const eyePositions=[],uv=[];
     for(const [index,uvIndex] of meta.eyes.pairs){const reference=meta.eyes.references[index];eyePositions.push(...positions.slice(reference*3,reference*3+3));uv.push(...meta.eyes.uv[uvIndex]);}
