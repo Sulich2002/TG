@@ -1,4 +1,4 @@
-import {habitDefinitions,tasks,normalize,dayKey,shiftDay} from './progress.js?v=0.14.0';
+import {habitDefinitions,tasks,normalize,dayKey,shiftDay} from './progress.js?v=0.14.1';
 
 export function habitMonth(day,offset=0){
  const date=new Date(day+'T12:00:00');date.setDate(1);date.setMonth(date.getMonth()+offset);return dayKey(date).slice(0,7);
@@ -17,7 +17,7 @@ export function habitTracker(value,{today=dayKey(),month=habitMonth(today),month
  for(const event of state.events){
   if(!['task','habit'].includes(event.kind)||event.day>today)continue;
   const id=event.task||event.habit.id;
-  if(!byId.has(id))byId.set(id,{...event.habit,id,archived:true,updatedAt:0,known:false,dates:new Set()});
+  if(!byId.has(id))byId.set(id,{...(event.habit||tasks.find(habit=>habit.id===id)),id,archived:true,updatedAt:0,known:false,dates:new Set()});
   byId.get(id).dates.add(event.day);
   if(standard.has(id)&&(!baseStart||event.day<baseStart))baseStart=event.day;
  }

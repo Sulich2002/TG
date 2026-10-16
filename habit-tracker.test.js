@@ -40,3 +40,8 @@ test('period aggregation counts daily marks once, excludes workouts and keeps ea
 test('future months and unsupported periods fall back to the current calendar view',()=>{
  const result=habitTracker(null,{today,month:'2027-02',months:8});assert.equal(result.month,'2026-10');assert.equal(result.months,1);
 });
+test('legacy standard completions retain their names after the active definitions disappear',()=>{
+ const saved=complete(normalize(null),'reading','2026-10-12');
+ const result=habitTracker({...saved,habits:[]},{today});
+ assert.equal(result.rows.length,1);assert.equal(result.rows[0].title,'Почитать');assert.equal(result.rows[0].done,1);assert.equal(result.missed,0);
+});
