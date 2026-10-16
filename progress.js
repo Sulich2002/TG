@@ -1,4 +1,4 @@
-import {garminSource,garminWorkout} from './garmin.js?v=0.15.0';
+import {garminSource,garminWorkout} from './garmin.js?v=0.15.1';
 export const tasks = [
   { id:'warmup', title:'Размяться', description:'Немного движения в комфортном темпе', xp:5, icon:'sun' },
   { id:'shower', title:'Принять душ', description:'Освежиться и начать день', xp:5, icon:'water' },

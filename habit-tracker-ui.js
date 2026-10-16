@@ -1,5 +1,5 @@
-import {habitTracker,habitMonth,habitMonthDays} from './habit-tracker.js?v=0.15.0';
-import {dayKey,shiftDay} from './progress.js?v=0.15.0';
+import {habitTracker,habitMonth,habitMonthDays} from './habit-tracker.js?v=0.15.1';
+import {dayKey,shiftDay} from './progress.js?v=0.15.1';
 const $=id=>document.getElementById(id);
 const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(cls)el.className=cls;return el;};
 const dateLabel=day=>new Intl.DateTimeFormat('ru',{day:'numeric',month:'long'}).format(new Date(day+'T12:00:00'));

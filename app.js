@@ -1,9 +1,9 @@
-import {setupHabitTracker} from './habit-tracker-ui.js?v=0.15.0';
-import {setupCoach} from './coach-ui.js?v=0.15.0';
-import {setupFriends} from './friends-ui.js?v=0.15.0';
-import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.15.0';
-import {normalizeProfile} from './profile.js?v=0.15.0';
-import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.15.0';
+import {setupHabitTracker} from './habit-tracker-ui.js?v=0.15.1';
+import {setupCoach} from './coach-ui.js?v=0.15.1';
+import {setupFriends} from './friends-ui.js?v=0.15.1';
+import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.15.1';
+import {normalizeProfile} from './profile.js?v=0.15.1';
+import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.15.1';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
 let friends,coach,habitTracker;
@@ -39,7 +39,7 @@ function navigate(panel) {
   }
   if(panel==='character')ensureAvatar();else avatar?.setActive(false);
   if(panel==='habits')habitTracker?.render();
-  updateBack();coach?.updateVisibility();window.scrollTo({top:0,behavior:'instant'});
+  updateBack();coach?.updateVisibility();$('app-scroll').scrollTo({top:0,behavior:'instant'});
 }
 function renderHistory() {
   renderCalendar();
@@ -186,7 +186,7 @@ async function ensureAvatar(){
   }
   if(avatarPromise)return;
   $('avatar-viewport').replaceChildren();
-  avatarPromise=import('./avatar.js?v=0.15.0').then(async({createAvatar})=>{
+  avatarPromise=import('./avatar.js?v=0.15.1').then(async({createAvatar})=>{
     avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});
     // The profile can change while the initial geometry is downloading.
     await avatar.setProfile(profile);avatar.setLevel(levelProgress(totalXP(state)).level);
