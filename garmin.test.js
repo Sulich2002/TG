@@ -42,3 +42,13 @@ test('daily health displays real zeroes, validates dates, and remains separate f
  const missing=garminHealth({day:today,restingHeartRate:0,sleepSeconds:0,averageStress:-1,sleepScore:100});
  assert.equal(missing.restingHeartRate,null);assert.equal(missing.sleepSeconds,null);assert.equal(missing.sleepScore,null);assert.equal(missing.averageStress,null);
 });
+
+test('fresh Garmin metadata repairs an already imported workout without changing volume, XP or record count',()=>{
+ let old=importGarmin(null,[activity(1,{averageHeartRate:null,maximumHeartRate:null})],['1'],today);old=awardAchievements(old,today);
+ const before=totalXP(old),fresh=activity(1,{distanceMeters:10000,averageHeartRate:151,maximumHeartRate:183,metricsVersion:2,averageCadence:172,calories:420,heartRateZones:[{zone:2,seconds:1500,lowerBpm:120,upperBpm:145}]});
+ const repaired=importGarmin(old,[fresh],[],today),workout=repaired.events.find(e=>e.kind==='workout');
+ assert.equal(totalXP(repaired),before);assert.equal(workout.data.distance,5);assert.equal(workout.data.source.averageHeartRate,151);assert.equal(workout.data.source.averageCadence,172);assert.equal(workout.data.source.heartRateZones[0].seconds,1500);assert.equal(repaired.events.length,old.events.length);
+ assert.deepEqual(normalize(JSON.parse(JSON.stringify(repaired))),repaired);
+ const missing=importGarmin(repaired,[activity(1,{averageHeartRate:null,maximumHeartRate:null})],[],today);
+ assert.equal(missing.events.find(e=>e.kind==='workout').data.source.averageHeartRate,151);
+});

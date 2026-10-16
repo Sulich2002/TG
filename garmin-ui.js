@@ -1,15 +1,15 @@
-import {setupAccountGarmin} from './garmin-account.js?v=0.14.2';
-import {mergeHealthHistory} from './health-analysis.js?v=0.14.2';
-import {setupHealthAnalysis} from './health-analysis-ui.js?v=0.14.2';
-import {garminURL,garminRequest} from './garmin.js?v=0.14.2';
-import {garminCandidates,importGarmin,dayKey,workoutDescription,workoutXP,formatXP} from './progress.js?v=0.14.2';
+import {setupAccountGarmin} from './garmin-account.js?v=0.15.0';
+import {mergeHealthHistory} from './health-analysis.js?v=0.15.0';
+import {setupHealthAnalysis} from './health-analysis-ui.js?v=0.15.0';
+import {garminURL,garminRequest} from './garmin.js?v=0.15.0';
+import {garminCandidates,importGarmin,refreshGarminSources,dayKey,workoutDescription,workoutXP,formatXP} from './progress.js?v=0.15.0';
 const $=id=>document.getElementById(id),storageKey='my-character-garmin-v1';
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 
 export function appendGarminDetails(container,source){
   container.append(node('small','Garmin Connect','garmin-source'));
   const details=node('details',null,'garmin-details');details.append(node('summary','Пульс и данные часов'));
-  const metrics=node('p');metrics.textContent=[source.averageHeartRate!==null?`Средний пульс: ${Math.round(source.averageHeartRate)} уд/мин`:null,source.maximumHeartRate!==null?`Максимальный: ${Math.round(source.maximumHeartRate)} уд/мин`:null].filter(Boolean).join(' · ')||'Пульс в этой записи отсутствует';details.append(metrics);
+  const metrics=node('p');metrics.textContent=[source.averageHeartRate!==null?`Средний пульс: ${Math.round(source.averageHeartRate)} уд/мин`:null,source.maximumHeartRate!==null?`Максимальный: ${Math.round(source.maximumHeartRate)} уд/мин`:null].filter(Boolean).join(' · ')||'Пульс пока не загружен в приложение. Это не означает, что Garmin его не записал.';details.append(metrics);
   const samples=source.heartRateSamples;
   if(samples.length>1){
     const minimum=Math.min(...samples.map(s=>s.bpm)),maximum=Math.max(...samples.map(s=>s.bpm)),span=Math.max(1,samples.at(-1).timestamp-samples[0].timestamp),range=Math.max(10,maximum-minimum),svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 240 85');svg.setAttribute('role','img');svg.setAttribute('aria-label',`Пульс по ходу занятия: от ${minimum} до ${maximum} ударов в минуту`);
@@ -17,6 +17,19 @@ export function appendGarminDetails(container,source){
   }
   if(source.movingDurationSeconds!==null)details.append(node('p',`В движении: ${formatXP(source.movingDurationSeconds/60)} мин`));
   if(source.elapsedDurationSeconds!==null)details.append(node('p',`С учётом пауз: ${formatXP(source.elapsedDurationSeconds/60)} мин`));
+  const labels={calories:['Энергия','ккал'],averageCadence:['Средний каденс','шаг/мин'],elevationGainMeters:['Набор высоты','м'],elevationLossMeters:['Спуск','м'],aerobicTrainingEffect:['Аэробный эффект','/ 5'],anaerobicTrainingEffect:['Анаэробный эффект','/ 5']};
+  for(const [key,[label,unit]] of Object.entries(labels))if(source[key]!=null)details.append(node('p',`${label}: ${formatXP(source[key])} ${unit}`));
+  for(const [key,label] of [['averageSpeedMps','Средняя скорость'],['maximumSpeedMps','Максимальная скорость']])if(source[key]!=null)details.append(node('p',`${label}: ${formatXP(source[key]*3.6)} км/ч`));
+  if(source.heartRateZones?.length){
+    const zones=node('div',null,'garmin-zones');zones.append(node('b','Пульсовые зоны Garmin'));
+    const total=source.heartRateZones.reduce((sum,zone)=>sum+zone.seconds,0);
+    for(const zone of source.heartRateZones){
+      const row=node('div',null,'garmin-zone-row'),heading=node('div'),bounds=zone.lowerBpm!==null?(zone.upperBpm!==null?`${zone.lowerBpm}–${zone.upperBpm}`:`от ${zone.lowerBpm}`)+' уд/мин':'';
+      const totalSeconds=Math.round(zone.seconds),minutes=Math.floor(totalSeconds/60),seconds=totalSeconds%60;heading.append(node('span',`Зона ${zone.zone}${bounds?' · '+bounds:''}`),node('b',`${minutes}:${String(seconds).padStart(2,'0')}`));
+      const track=node('div',null,'garmin-zone-track'),fill=node('i');fill.style.width=`${total?zone.seconds/total*100:0}%`;fill.dataset.zone=zone.zone;track.append(fill);row.append(heading,track);zones.append(row);
+    }
+    details.append(zones);
+  }else details.append(node('small','Время в пульсовых зонах ещё не загружено в приложение.'));
   container.append(details);
 }
 
@@ -87,6 +100,8 @@ export function setupGarmin({getState,persist,notify,getProfile,onImport,onDialo
 
       if(ticket!==generation||stopped)return;
       if(!Array.isArray(result.activities)||result.activities.length>100)throw new Error('Garmin-сервис вернул неожиданный ответ');
+      const refreshed=refreshGarminSources(getState(),result.activities);
+      if(JSON.stringify(refreshed)!==JSON.stringify(getState())&&!persist(refreshed))return;
       if(Array.isArray(result.health)){health=mergeHealthHistory(health,result.health.slice(0,120),dayKey());try{localStorage.setItem('my-character-garmin-health-v1',JSON.stringify({url:settings.url,scope:settings.scope,rows:health}));}catch{}renderHealth();}
       if(review){showPreview(result.activities);return;}
       if(!settings.initialReviewed){status('Подключено. Нажми «Новые занятия», чтобы выбрать записи для первого импорта.');return;}

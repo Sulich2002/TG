@@ -1,5 +1,5 @@
-import {habitTracker,habitMonth,habitMonthDays} from './habit-tracker.js?v=0.14.2';
-import {dayKey,shiftDay} from './progress.js?v=0.14.2';
+import {habitTracker,habitMonth,habitMonthDays} from './habit-tracker.js?v=0.15.0';
+import {dayKey,shiftDay} from './progress.js?v=0.15.0';
 const $=id=>document.getElementById(id);
 const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(cls)el.className=cls;return el;};
 const dateLabel=day=>new Intl.DateTimeFormat('ru',{day:'numeric',month:'long'}).format(new Date(day+'T12:00:00'));
@@ -17,7 +17,7 @@ export function setupHabitTracker({getState,onManage,onNavigate,onDialog}){
   $('habit-detail-title').textContent=row.title;
   $('habit-detail-period').textContent=periodText();
   $('habit-detail-done').textContent=row.done;$('habit-detail-missed').textContent=row.missed;$('habit-detail-best').textContent=row.best;
-  $('habit-detail-note').textContent=`Учёт с ${dateLabel(row.activeFrom)}. Дни до этой даты не считаются пропусками. Более ранние сохранённые выполнения тоже показаны.`;
+  $('habit-detail-note').textContent=`Учёт с ${dateLabel(row.activeFrom)}.`;
   const status=$('habit-detail-status');status.replaceChildren();
   if(selected.day){status.className='habit-selected-status is-'+row.status(selected.day);status.append(node('b',dateLabel(selected.day)),node('span',labels[row.status(selected.day)]));}
   else status.className='habit-selected-status';
@@ -42,7 +42,6 @@ export function setupHabitTracker({getState,onManage,onNavigate,onDialog}){
   const days=habitMonthDays(shown),visibleRows=result.rows.filter(row=>row.activeFrom<=days.at(-1)||days.some(day=>row.status(day)==='done'));
   $('habit-tracker-empty').hidden=visibleRows.length>0;$('habit-grid-wrap').hidden=!visibleRows.length;
   $('habit-empty-title').textContent=shown<habitMonth(today)?'За этот месяц привычек нет':'Место для новых привычек';
-  $('habit-empty-description').textContent='В таблице остаются только текущие привычки. Новые появляются с даты добавления, без пропусков за предыдущие дни.';
   const table=$('habit-grid'),head=node('thead'),heading=node('tr'),corner=node('th','Привычка','habit-grid-name');corner.scope='col';heading.append(corner);
   for(const day of days){const th=node('th',null,'habit-grid-date');th.scope='col';th.classList.toggle('is-today',day===today);th.classList.toggle('is-weekend',[0,6].includes(new Date(day+'T12:00:00').getDay()));th.append(node('span',Number(day.slice(8))),node('small',new Intl.DateTimeFormat('ru',{weekday:'short'}).format(new Date(day+'T12:00:00'))));heading.append(th);}
   head.append(heading);const body=node('tbody');

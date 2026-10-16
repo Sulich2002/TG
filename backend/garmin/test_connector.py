@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from datetime import date, timedelta
 
 from api import ORIGIN, check_password, make_server, password_record
-from core import Store, heart_samples, normalize_activity, synchronize
+from core import Store, heart_samples, normalize_activity, normalize_zones, synchronize
 from health import normalize_health, synchronize_health
 from connector import OwnerMismatch, verify_owner
 
@@ -130,24 +130,61 @@ class ConnectorTests(unittest.TestCase):
                 return None
         client = Client()
         synchronize_health(client, self.store, "2026-10-15")
-        self.assertEqual([row["day"] for row in self.store.health()], ["2026-10-15", "2026-10-14"])
+        self.assertEqual([row["day"] for row in self.store.health()], ["2026-10-15", "2026-10-14", "2026-10-13", "2026-10-12"])
         self.assertEqual(self.store.health()[0]["sleepSeconds"], 25200)
         self.assertEqual(self.store.get("healthSyncInterval"), 900)
         self.assertAlmostEqual(self.store.get("nextHealthSync") - time.time(), 900, delta=5)
         synchronize_health(client, self.store, "2026-10-15")
-        self.assertEqual(client.calls, 2)
+        self.assertEqual(client.calls, 4)
         self.store.set("nextHealthSync", time.time() - 1)
         synchronize_health(client, self.store, "2026-10-15")
-        self.assertEqual(client.calls, 4)
+        self.assertEqual(client.calls, 8)
         self.store.set("healthSyncInterval", 3600)
         self.store.set("nextHealthSync", time.time() + 3600)
         synchronize_health(client, self.store, "2026-10-15")
-        self.assertEqual(client.calls, 6, "upgrade replaces the previous hourly schedule")
+        self.assertEqual(client.calls, 12, "upgrade replaces the previous hourly schedule")
         client.fail_sleep = True
         synchronize_health(client, self.store, "2026-10-15", force=True)
-        self.assertEqual(len(self.store.health()), 2)
+        self.assertEqual(len(self.store.health()), 10)
         self.assertEqual(self.store.health()[0]["sleepSeconds"], 25200)
         self.assertIn("sleep", self.store.health()[0]["warnings"])
+
+    def test_detail_aliases_activity_zones_and_extra_measurements(self):
+        result=normalize_activity(activity(averageHR=0,maxHR=None), {'summaryDTO':{'averageHeartRate':151,'maxHeartRate':183,'averageSpeed':3.5,'maxSpeed':5,'averageRunningCadenceInStepsPerMinute':172,'calories':420,'elevationGain':57}}, {},
+            [{'zoneNumber':1,'secsInZone':0,'zoneLowBoundary':95},{'zoneNumber':2,'secsInZone':1200,'zoneLowBoundary':120},{'zoneNumber':3,'secsInZone':300,'zoneLowBoundary':145}])
+        self.assertEqual(result['averageHeartRate'],151);self.assertEqual(result['maximumHeartRate'],183)
+        self.assertEqual(result['heartRateZones'][0]['seconds'],0);self.assertEqual(result['heartRateZones'][1]['lowerBpm'],120)
+        self.assertEqual(result['averageCadence'],172);self.assertEqual(result['calories'],420);self.assertEqual(result['elevationGainMeters'],57)
+        self.assertEqual(result['averageSpeedMps'],3.5)
+        self.assertEqual(normalize_zones({'hrTimeInZones':[{'zoneNumber':2,'secsInZone':1200,'zoneLowBoundary':120}]}),
+                         [{'zone':2,'seconds':1200,'lowerBpm':120,'upperBpm':None}])
+
+    def test_unchanged_old_summary_is_repaired_and_zones_failure_keeps_pulse(self):
+        summary=activity(averageHR=None,maxHR=None);self.store.upsert(summary,{}, {})
+        with self.store.connect() as db:db.execute("UPDATE activities SET normalized=json_remove(normalized,'$.metricsVersion')")
+        class Client:
+            calls=0
+            def get_activities(self,*args):return [summary]
+            def get_activity(self,identity):return {'summaryDTO':{'averageHeartRate':150,'maxHeartRate':180}}
+            def get_activity_details(self,*args,**kwargs):self.calls+=1;return details()
+            def get_activity_hr_in_timezones(self,identity):raise RuntimeError('upstream private error')
+        client=Client();self.assertEqual(synchronize(client,self.store)['changed'],1)
+        row=self.store.activities()[0];self.assertEqual(row['averageHeartRate'],150);self.assertEqual(row['metricWarnings'],['zones'])
+        synchronize(client,self.store);self.assertEqual(client.calls,1);self.assertEqual(self.store.count(),1)
+
+    def test_health_backfill_prioritizes_selected_days_with_a_bounded_request_count(self):
+        class Client:
+            days=[]
+            def get_stats(self,day):self.days.append(day);return {'totalSteps':1000}
+            def get_heart_rates(self,day):return {'restingHeartRate':53}
+            def get_sleep_data(self,day):return {'dailySleepDTO':{'sleepTimeSeconds':25200}}
+            def get_hrv_data(self,day):return None
+        client=Client();self.store.set('healthRequestedDays',['2026-09-30','2026-10-01'])
+        synchronize_health(client,self.store,'2026-10-15')
+        self.assertEqual(client.days,['2026-10-14','2026-10-15','2026-09-30','2026-10-01'])
+        self.assertEqual(self.store.get('healthRequestedDays'),[])
+        self.assertEqual(len(self.store.health()),4)
+        self.assertEqual(next(row for row in self.store.health() if row['day']=='2026-09-30')['sleepSeconds'],25200)
 
     def test_salted_password_hash_and_validation(self):
         password = "test-fixture-password-only"

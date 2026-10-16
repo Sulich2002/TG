@@ -1,5 +1,5 @@
-import {garminURL} from './garmin.js?v=0.14.2';
-import {normalize,awardAchievements,formatXP,mergeHabits} from './progress.js?v=0.14.2';
+import {garminURL} from './garmin.js?v=0.15.0';
+import {normalize,awardAchievements,formatXP,mergeHabits} from './progress.js?v=0.15.0';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const accountKey='my-character-account-v1',backupKey='my-character-before-account-v1',serverKey='my-character-server-v1';

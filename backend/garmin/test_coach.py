@@ -76,6 +76,23 @@ class CoachTests(unittest.TestCase):
         duplicate=context_for(self.user,manual,{'activities':watch['activities'][:1]}, {},None,TODAY)
         self.assertEqual(duplicate['week']['recordedSessions'],1);self.assertEqual(duplicate['week']['possibleDuplicatesExcluded'],1)
 
+    def test_fresh_garmin_pulse_zones_and_historical_sleep_reach_the_selected_context(self):
+        diary=validate_state({**EMPTY,'events':[workout('garmin:123',day='2026-09-30',distance=5,minutes=30,source={'provider':'garmin','id':'123','averageHeartRate':None})]},TODAY)
+        watch={'activities':[{'activityId':'123','day':'2026-09-30','typeKey':'running','durationSeconds':3600,'distanceMeters':9000,
+               'averageHeartRate':151,'maximumHeartRate':183,'averageCadence':172,'calories':420,'averageSpeedMps':3.5,
+               'heartRateZones':[{'zone':2,'seconds':1500,'lowerBpm':120,'upperBpm':145}]}],
+               'health':[{'day':'2026-09-30','sleepSeconds':25200,'warnings':[]},{'day':'2026-10-01','sleepSeconds':21600,'warnings':[]},
+                         {'day':TODAY,'sleepSeconds':18000,'warnings':[]}]}
+        context=context_for(self.user,diary,watch,{},'garmin:123',TODAY);selected=context['selectedWorkout']
+        self.assertEqual(selected['averageHeartRate'],151);self.assertEqual(selected['maximumHeartRate'],183);self.assertEqual(selected['averageCadence'],172)
+        self.assertEqual(selected['heartRateZones'][0]['seconds'],1500);self.assertEqual(selected['distance'],5);self.assertEqual(selected['minutes'],30)
+        self.assertEqual(selected['display']['Темп'],'6:00 мин/км');self.assertEqual(selected['display']['Средний пульс'],'151 уд/мин')
+        self.assertEqual(context['workoutsAvailable30Days'],1);self.assertEqual(context['week']['recordedSessions'],0)
+        self.assertEqual([r['day'] for r in context['selectedWorkoutHealth']],['2026-09-30','2026-10-01'])
+        self.assertEqual(context['selectedWorkoutHealth'][0]['sleepMinutes'],420)
+        self.assertEqual([r['day'] for r in context['health']],[TODAY])
+        self.assertEqual(context_for(self.user,EMPTY,{'activities':[],'health':[]},{},None,TODAY)['selectedWorkoutHealth'],[])
+
     def test_provider_requires_owner_free_plan_and_never_exposes_key_or_sends_data_on_load(self):
         self.coach.snapshot(self.user);self.assertEqual(self.transport.calls,[])
         with self.assertRaises(AccountError):self.coach.provider(self.other,{'key':KEY,'freePlan':True})

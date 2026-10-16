@@ -8,7 +8,7 @@ import shutil
 import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from core import Store, synchronize
 from health import synchronize_health
@@ -79,6 +79,27 @@ class UserGarmin:
         store,path,binding=self.target(user)
         connected=bool(binding and ((path/'session').is_dir() or store.get('watchConnected') is True))
         return {'connected':connected,'activities':store.activities() if connected else [],'health':store.health() if connected else [],'lastSync':store.get('lastSync') if connected else None,'syncError':store.get('syncError') if connected else None,'connectionId':binding['fingerprint'] if binding else None}
+    def request_context(self,user,day,activity_id=None):
+        """Prioritize the selected session's missing data on the next bounded poll."""
+        today=datetime.now(ZoneInfo('Europe/Moscow')).date()
+        try: selected=date.fromisoformat(day)
+        except (ValueError,TypeError): return
+        if not today-timedelta(days=29)<=selected<=today: return
+        store,_,binding=self.target(user)
+        if not binding:return
+        known={row['day']:row for row in store.health(30)}
+        requested=store.get('healthRequestedDays',[])
+        for date_value in (selected,selected+timedelta(days=1)):
+            key=date_value.isoformat()
+            if date_value<=today and (key not in known or known[key].get('warnings') or known[key].get('sleepSeconds') is None):
+                requested=[key]+[old for old in requested if old!=key]
+        store.set('healthRequestedDays',requested[:4])
+        if isinstance(activity_id,str) and re.fullmatch(r'[1-9][0-9]{0,29}',activity_id):
+            cached,original=store.activity_record(activity_id)
+            if cached and (cached.get('metricsVersion',0)<2 or cached.get('averageHeartRate') is None or cached.get('metricWarnings') and time.time()>=original.get('retryMetricsAfter',0)):
+                queued=store.get('activityDetailRequests',[])
+                store.set('activityDetailRequests',([activity_id]+[old for old in queued if old!=activity_id])[:4])
+
     def start(self,user,email,password):
         if not isinstance(email,str) or not 3<=len(email)<=254 or '@' not in email or not isinstance(password,str) or not 1<=len(password)<=200:raise AccountError('garmin_credentials')
         if time.time()<self.root.get('garminLoginRetry:'+user['id'],0):raise AccountError('garmin_rate_limited',429)

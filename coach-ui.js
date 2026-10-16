@@ -1,8 +1,31 @@
-import {garminURL} from './garmin.js?v=0.14.2';
-import {normalize,dayKey,shiftDay,workoutTypes,workoutDescription,formatXP} from './progress.js?v=0.14.2';
+import {garminURL} from './garmin.js?v=0.15.0';
+import {normalize,dayKey,shiftDay,workoutTypes,workoutDescription,formatXP} from './progress.js?v=0.15.0';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const errors={account_required:'Войди в аккаунт приложения заново.',not_found:'Обнови коннектор на сервере, чтобы включить тренера.',coach_not_configured:'Владелец группы ещё не подключил ИИ.',coach_consent_required:'Сначала разреши передачу данных в настройках тренера.',coach_busy:'Тренер ещё обрабатывает запрос. Подожди немного.',coach_daily_limit:'Лимит сообщений на сегодня исчерпан. Он обновится завтра по московскому времени.',coach_quota:'Бесплатная квота Groq временно исчерпана. Попробуй позже; платный сервис не подключается.',coach_key_invalid:'Groq не принял ключ. Владельцу нужно проверить подключение.',coach_key_format:'Нужен ключ Groq, начинающийся с gsk_, и подтверждение бесплатного тарифа.',coach_model_unavailable:'Доступная модель не найдена. Проверь доступ к моделям в аккаунте Groq.',coach_unavailable:'ИИ сейчас не ответил. Текст сохранён в поле — можно повторить отправку.',coach_workout_missing:'Тренировка недоступна в контексте. Выбери запись за последние 30 дней.',coach_conflict:'Разговор изменился на другом устройстве. История обновлена, твой текст остался в поле.',coach_request_conflict:'Это сообщение уже отправлялось с другим содержимым. Измени текст и отправь снова.',coach_message_invalid:'Напиши сообщение длиной до 2000 символов.',coach_settings_invalid:'Проверь цель и дату события.',owner_required:'Подключение ИИ настраивает владелец группы.',invalid_progress:'Проверь дневник: не удалось прочитать одну из записей.'};
+
+export function coachAnswerBlocks(text){
+ const lines=String(text).replace(/\r/g,'').split('\n'),blocks=[];
+ let paragraph=[];
+ const flush=()=>{if(paragraph.length){blocks.push({type:'paragraph',text:paragraph.join(' ')});paragraph=[];}};
+ const cells=line=>line.trim().replace(/^\||\|$/g,'').split('|').map(cell=>cell.trim());
+ const divider=line=>line.includes('|')&&cells(line).every(cell=>/^:?-{3,}:?$/.test(cell));
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i].trim();
+  if(line.includes('|')&&i+1<lines.length&&divider(lines[i+1])){
+   flush();const rows=[];i+=2;
+   while(i<lines.length&&lines[i].includes('|')&&lines[i].trim()){rows.push(cells(lines[i]));i++;}
+   i--;blocks.push({type:'metrics',rows});continue;
+  }
+  if(!line){flush();continue;}
+  const list=line.match(/^(?:[-*]\s+|\d+[.)]\s+)(.+)$/);
+  if(list){flush();const last=blocks.at(-1);if(last?.type==='list')last.items.push(list[1]);else blocks.push({type:'list',items:[list[1]]});continue;}
+  if(/^#{1,6}\s/.test(line)){flush();blocks.push({type:'heading',text:line.replace(/^#{1,6}\s+/,'')});continue;}
+  if(/^```/.test(line)){flush();continue;}
+  paragraph.push(line);
+ }
+ flush();return blocks;
+}
 
 export function coachWorkouts(state,remote=[],days=30,today=dayKey()){
  const start=shiftDay(today,1-days),map=new Map(remote.filter(r=>typeof r?.id==='string'&&Object.hasOwn(workoutTypes,r.type)).map(r=>[r.id,r]));
@@ -43,7 +66,12 @@ export function setupCoach({getState,onNavigate,onDialog,notify}){
  function back(){$('coach-menu').open=false;onNavigate('progress');document.querySelector('[data-progress-tab=activities]').click();}
  function resizeInput(){textInput.style.height='auto';textInput.style.height=Math.min(80,textInput.scrollHeight)+'px';if(following)toBottom();}
  function appendAnswer(container,text){
-  for(const line of text.split('\n')){const p=node('p',null,'coach-answer-line'),parts=line.replace(/^#{1,6}\s+/,'').split(/(\*\*[^*\n]+\*\*)/g);for(const part of parts)p.append(part.startsWith('**')&&part.endsWith('**')?node('strong',part.slice(2,-2)):document.createTextNode(part));if(!line)p.append(document.createElement('br'));container.append(p);}
+  const inline=(element,text)=>{for(const part of text.split(/(\*\*[^*\n]+\*\*)/g))element.append(part.startsWith('**')&&part.endsWith('**')?node('strong',part.slice(2,-2)):document.createTextNode(part));};
+  for(const block of coachAnswerBlocks(text)){
+   if(block.type==='list'){const list=node('ul',null,'coach-answer-list');for(const item of block.items){const li=node('li');inline(li,item);list.append(li);}container.append(list);}
+   else if(block.type==='metrics'){const list=node('div',null,'coach-answer-metrics');for(const row of block.rows){const p=node('p');p.append(node('strong',row[0]+': '));inline(p,row.slice(1).join(' — '));list.append(p);}container.append(list);}
+   else{const p=node(block.type==='heading'?'h3':'p',null,'coach-answer-line');inline(p,block.text);container.append(p);}
+  }
  }
  function turn(role,text,id){const article=node('article',null,'coach-message coach-'+role);article.dataset.messageId=id;article.setAttribute('aria-label',role==='user'?'Твоё сообщение':'Ответ тренера');if(role==='user')article.append(node('p',text));else appendAnswer(article,text);return article;}
  function renderMessages(){

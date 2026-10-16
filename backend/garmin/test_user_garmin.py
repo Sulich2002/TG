@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from accounts import AccountError
 from core import Store
+from datetime import datetime,timedelta
+from zoneinfo import ZoneInfo
 from user_garmin import UserGarmin, operation_lock
 
 
@@ -49,6 +51,19 @@ class UserGarminTests(unittest.TestCase):
         self.fail('job did not reach '+phase)
     def connect(self,user,email):
         job=self.service.start(user,email,'fixture-watch-password');self.wait(user,job['job'],'connected');return job['job']
+    def test_selected_context_requests_are_private_bounded_and_do_not_fetch_garmin_on_read(self):
+        self.connect(self.first,'first@fixture.invalid')
+        self.connect(self.second,'second@fixture.invalid')
+        today=datetime.now(ZoneInfo('Europe/Moscow')).date();selected=(today-timedelta(days=16)).isoformat()
+        self.service.request_context(self.first,selected,'456')
+        first,_,_=self.service.target(self.first);second,_,_=self.service.target(self.second)
+        self.assertEqual(set(first.get('healthRequestedDays')),{selected,(today-timedelta(days=15)).isoformat()})
+        self.assertEqual(second.get('healthRequestedDays',[]),[]);self.assertEqual(self.store.get('healthRequestedDays',[]),[])
+        before=first.get('healthRequestedDays');self.service.request_context(self.first,'1900-01-01','../../private')
+        self.assertEqual(first.get('healthRequestedDays'),before)
+        for offset in range(5,10):self.service.request_context(self.first,(today-timedelta(days=offset)).isoformat())
+        self.assertLessEqual(len(first.get('healthRequestedDays')),4)
+
     def test_mfa_private_sessions_isolated_data_and_disconnect(self):
         first=self.service.start(self.first,'mfa-first@fixture.invalid','fixture-watch-password');self.wait(self.first,first['job'],'mfa')
         with self.assertRaises(AccountError):self.service.get_job(self.second,first['job'])

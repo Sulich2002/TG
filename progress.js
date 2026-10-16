@@ -1,4 +1,4 @@
-import {garminSource,garminWorkout} from './garmin.js?v=0.14.2';
+import {garminSource,garminWorkout} from './garmin.js?v=0.15.0';
 export const tasks = [
   { id:'warmup', title:'Размяться', description:'Немного движения в комфортном темпе', xp:5, icon:'sun' },
   { id:'shower', title:'Принять душ', description:'Освежиться и начать день', xp:5, icon:'water' },
@@ -325,8 +325,23 @@ export function garminCandidates(value,activities,today=dayKey()){
  }
  return result;
 }
+export function refreshGarminSources(value,activities){
+ const state=normalize(value),sources=new Map();
+ for(const raw of activities){const data=garminWorkout(raw);if(data)sources.set(data.source.id,data);}
+ return {...state,events:state.events.map(event=>{
+  if(event.kind!=='workout'||event.data.source?.provider!=='garmin')return event;
+  const fresh=sources.get(event.data.source.id);if(!fresh||fresh.day!==event.day)return event;
+  const source={...event.data.source};
+  for(const [key,value] of Object.entries(fresh.source)){
+   if(value===null||Array.isArray(value)&&!value.length||key==='metricsVersion'&&value<source.metricsVersion)continue;
+   source[key]=value;
+  }
+  if(fresh.source.metricsVersion>=2)source.metricWarnings=fresh.source.metricWarnings;
+  return {...event,data:{...event.data,source}};
+ })};
+}
 export function importGarmin(value,activities,selected,today=dayKey()){
- let state=normalize(value);const ids=new Set(selected);
+ let state=refreshGarminSources(value,activities);const ids=new Set(selected);
  for(const item of garminCandidates(state,activities,today))if(ids.has(item.id)&&!state.events.some(e=>e.id==='garmin:'+item.id))state=addWorkout(state,item.data,'garmin:'+item.id,today);
  return state;
 }

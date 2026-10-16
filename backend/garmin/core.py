@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -45,7 +46,27 @@ def heart_samples(details):
     return result
 
 
-def normalize_activity(summary, activity=None, details=None):
+ACTIVITY_METRICS_VERSION = 2
+
+
+def normalize_zones(raw):
+    """Keep Garmin's activity-specific zone bounds; never infer personal zones."""
+    if isinstance(raw, dict):
+        raw = raw.get('hrTimeInZones', raw.get('heartRateZones', raw.get('zones')))
+    if not isinstance(raw, list): return []
+    zones = {}
+    for item in raw[:20]:
+        if not isinstance(item, dict): continue
+        number = numeric(item.get('zoneNumber'), 1, 5)
+        seconds = numeric(item.get('secsInZone'), 0, 604800)
+        if number is None or number != int(number) or seconds is None: continue
+        zones[int(number)] = {'zone': int(number), 'seconds': seconds,
+            'lowerBpm': numeric(item.get('zoneLowBoundary'), 20, 260),
+            'upperBpm': numeric(item.get('zoneHighBoundary'), 20, 260)}
+    return [zones[key] for key in sorted(zones)]
+
+
+def normalize_activity(summary, activity=None, details=None, zones=None):
     identity = str(summary.get("activityId", ""))
     if not identity.isascii() or not identity.isdigit() or len(identity) > 30 or int(identity) <= 0:
         raise ValueError("invalid activity ID")
@@ -58,20 +79,35 @@ def normalize_activity(summary, activity=None, details=None):
     detail_summary = activity.get("summaryDTO", {})
     if not isinstance(detail_summary, dict):
         detail_summary = {}
-    data = {**detail_summary, **{k: v for k, v in summary.items() if v is not None}}
+    def metric(*keys, low=0, high=1e10):
+        for source in (summary, detail_summary, activity):
+            for key in keys:
+                value = numeric(source.get(key), low, high)
+                if value is not None: return value
+        return None
     kind = summary.get("activityType", {})
     kind = kind.get("typeKey", "unknown") if isinstance(kind, dict) else "unknown"
     return {
         "activityId": identity, "day": day, "startedLocal": parsed.isoformat(),
         "title": str(summary.get("activityName") or "Тренировка Garmin")[:160],
         "typeKey": str(kind)[:80],
-        "distanceMeters": numeric(data.get("distance"), high=1e7),
-        "durationSeconds": numeric(data.get("duration"), high=604800),
-        "movingDurationSeconds": numeric(data.get("movingDuration"), high=604800),
-        "elapsedDurationSeconds": numeric(data.get("elapsedDuration"), high=604800),
-        "averageHeartRate": numeric(data.get("averageHR"), 20, 260),
-        "maximumHeartRate": numeric(data.get("maxHR"), 20, 260),
+        "distanceMeters": metric("distance", high=1e7),
+        "durationSeconds": metric("duration", high=604800),
+        "movingDurationSeconds": metric("movingDuration", high=604800),
+        "elapsedDurationSeconds": metric("elapsedDuration", high=604800),
+        "averageHeartRate": metric("averageHR", "averageHeartRate", low=20, high=260),
+        "maximumHeartRate": metric("maxHR", "maxHeartRate", "maximumHeartRate", low=20, high=260),
         "heartRateSamples": heart_samples(details or {}),
+        "heartRateZones": normalize_zones(zones),
+        "averageSpeedMps": metric('averageSpeed', high=100),
+        "maximumSpeedMps": metric('maxSpeed', 'maximumSpeed', high=100),
+        "averageCadence": metric('averageRunningCadenceInStepsPerMinute', high=400),
+        "calories": metric('calories', high=100000),
+        "elevationGainMeters": metric('elevationGain', 'totalAscent', high=100000),
+        "elevationLossMeters": metric('elevationLoss', 'totalDescent', high=100000),
+        "aerobicTrainingEffect": metric('aerobicTrainingEffect', 'trainingEffect', high=5),
+        "anaerobicTrainingEffect": metric('anaerobicTrainingEffect', high=5),
+        "metricsVersion": ACTIVITY_METRICS_VERSION,
     }
 
 
@@ -117,9 +153,16 @@ class Store:
             row = db.execute("SELECT summary_hash FROM activities WHERE id=?", (identity,)).fetchone()
         return row[0] if row else None
 
-    def upsert(self, summary, activity, details):
-        normalized = normalize_activity(summary, activity, details)
-        original = {"summary": summary, "activity": activity, "details": details}
+    def activity_record(self, identity):
+        with self.connect() as db:
+            row = db.execute('SELECT normalized,original FROM activities WHERE id=?', (identity,)).fetchone()
+        return (json.loads(row[0]), json.loads(row[1])) if row else (None, {})
+
+    def upsert(self, summary, activity, details, zones=None, warnings=None):
+        normalized = normalize_activity(summary, activity, details, zones)
+        normalized['metricWarnings'] = warnings or []
+        original = {"summary": summary, "activity": activity, "details": details, "zones": zones,
+                    "retryMetricsAfter": time.time()+3600 if warnings else 0}
         with self.connect() as db:
             db.execute("""INSERT INTO activities VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
                           summary_hash=excluded.summary_hash,normalized=excluded.normalized,
@@ -158,35 +201,49 @@ def summary_hash(summary):
 
 
 def synchronize(client, store, limit=20):
-    """Bounded polling; details are fetched only for new or changed summaries."""
+    """Poll summaries and repair up to two cached records per run, without new XP."""
     summaries = client.get_activities(0, limit)
     if not isinstance(summaries, list):
         raise ValueError("unexpected activity list")
-    added = changed = rejected = 0
-    for summary in summaries[:limit]:
+    requested = store.get('activityDetailRequests', [])
+    queued = []
+    for identity in requested[:4]:
+        _, old = store.activity_record(identity)
+        if isinstance(old.get('summary'), dict): queued.append(old['summary'])
+    added = changed = rejected = repaired = 0
+    seen = set()
+    for summary in queued+summaries[:limit]:
         try:
             normalize_activity(summary)
         except (ValueError, TypeError, AttributeError):
             rejected += 1
             continue
         identity = str(summary["activityId"])
+        if identity in seen: continue
+        seen.add(identity)
         previous = store.existing_hash(identity)
-        if previous == summary_hash(summary):
-            continue
-        def optional(method):
-            try:
-                return method()
+        cached, original = store.activity_record(identity)
+        same = previous == summary_hash(summary)
+        needs_repair = bool(cached and (cached.get('metricsVersion', 0)<ACTIVITY_METRICS_VERSION or
+            cached.get('metricWarnings') and time.time()>=original.get('retryMetricsAfter', 0) or identity in requested))
+        if same and (not needs_repair or repaired>=2): continue
+        if same: repaired += 1
+        warnings = []
+        def optional(key, method):
+            try: return method()
             except Exception as error:
-                if "NotFound" in type(error).__name__:
-                    return {}
-                raise
-        activity = optional(lambda: client.get_activity(identity))
-        details = optional(lambda: client.get_activity_details(identity, maxchart=1000, maxpoly=0))
-        store.upsert(summary, activity, details)
-        if previous is None:
-            added += 1
-        else:
-            changed += 1
+                kind = type(error).__name__
+                if 'Authentication' in kind or 'Login' in kind or 'TooManyRequests' in kind: raise
+                warnings.append(key)
+                return original.get(key) or {}
+        activity = optional('activity', lambda: client.get_activity(identity))
+        details = optional('details', lambda: client.get_activity_details(identity, maxchart=1000, maxpoly=0))
+        zones = optional('zones', lambda: client.get_activity_hr_in_timezones(identity))
+        store.upsert(summary, activity, details, zones, warnings)
+        if identity in requested: requested.remove(identity)
+        if previous is None: added += 1
+        else: changed += 1
+    store.set('activityDetailRequests', requested)
     store.set("lastSync", utcnow())
     store.set("syncError", None)
     return {"added": added, "changed": changed, "rejected": rejected}

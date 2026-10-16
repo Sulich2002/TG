@@ -41,12 +41,21 @@ def normalize_health(day, raw, warnings=None):
 
 def synchronize_health(client, store, today, force=False):
     interval = 15 * 60
-    if not force and store.get("healthSyncInterval") == interval and time.time() < store.get("nextHealthSync", 0):
+    poll_started = time.time()
+    if not force and not store.get('healthRequestedDays', []) and store.get('healthBackfillVersion') == 1 and store.get("healthSyncInterval") == interval and time.time() < store.get("nextHealthSync", 0):
         return
     current = date.fromisoformat(today)
     methods = {"daily": client.get_stats, "heart": client.get_heart_rates, "sleep": client.get_sleep_data, "hrv": client.get_hrv_data}
-    for offset in (1, 0):
-        day = (current - timedelta(days=offset)).isoformat()
+    requested = store.get('healthRequestedDays', [])
+    known = {row['day'] for row in store.health(30)}
+    cutoff = (current-timedelta(days=29)).isoformat()
+    historical = []
+    for day in requested+[(current-timedelta(days=offset)).isoformat() for offset in range(2,30)]:
+        if not isinstance(day,str) or not cutoff <= day < (current-timedelta(days=1)).isoformat(): continue
+        if day in historical or day in known and day not in requested: continue
+        historical.append(day)
+        if len(historical)>=2: break
+    for day in [(current-timedelta(days=1)).isoformat(), today]+historical:
         raw = store.health_original(day)
         warnings = []
         for key, method in methods.items():
@@ -62,5 +71,7 @@ def synchronize_health(client, store, today, force=False):
                     warnings.append(key)  # Retain previous data if a section fails.
         normalized = normalize_health(day, raw, warnings)
         store.upsert_health(day, normalized, raw, (current - timedelta(days=30)).isoformat())
+    store.set('healthRequestedDays', [day for day in requested if day not in historical+[(current-timedelta(days=1)).isoformat(),today] and cutoff <= day <= today])
+    store.set('healthBackfillVersion', 1)
     store.set("healthSyncInterval", interval)
-    store.set("nextHealthSync", time.time() + interval)
+    store.set("nextHealthSync", poll_started + interval)

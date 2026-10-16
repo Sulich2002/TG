@@ -17,16 +17,28 @@ export function garminURL(value){
   if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash||!['','/'].includes(url.pathname))throw new Error('Нужен HTTPS-адрес сервиса без пароля и дополнительных путей');
   return url.origin;
 }
+export const garminMetricLimits={averageSpeedMps:100,maximumSpeedMps:100,averageCadence:400,calories:100000,elevationGainMeters:100000,elevationLossMeters:100000,aerobicTrainingEffect:5,anaerobicTrainingEffect:5};
+export function garminZones(raw){
+ if(!Array.isArray(raw))return [];
+ const zones=new Map();
+ for(const item of raw.slice(0,20)){
+  const zone=finite(item?.zone,1,5),seconds=finite(item?.seconds,0,604800);
+  if(!Number.isInteger(zone)||seconds===null)continue;
+  zones.set(zone,{zone,seconds,lowerBpm:finite(item.lowerBpm,20,260),upperBpm:finite(item.upperBpm,20,260)});
+ }
+ return [...zones.values()].sort((a,b)=>a.zone-b.zone);
+}
 export function garminSource(raw){
   if(raw?.provider!=='garmin'||typeof raw.id!=='string'||! /^[1-9][0-9]{0,29}$/.test(raw.id))return null;
   const samples=(Array.isArray(raw.heartRateSamples)?raw.heartRateSamples:[]).slice(0,300).filter(s=>finite(s?.timestamp,1,1e15)!==null&&finite(s?.bpm,20,260)!==null).map(s=>({timestamp:s.timestamp,bpm:s.bpm})).sort((a,b)=>a.timestamp-b.timestamp);
-  return {provider:'garmin',id:raw.id,typeKey:typeof raw.typeKey==='string'?raw.typeKey.slice(0,80):null,title:typeof raw.title==='string'?raw.title.slice(0,160):'Тренировка Garmin',averageHeartRate:finite(raw.averageHeartRate,20,260),maximumHeartRate:finite(raw.maximumHeartRate,20,260),movingDurationSeconds:finite(raw.movingDurationSeconds,0,604800),elapsedDurationSeconds:finite(raw.elapsedDurationSeconds,0,604800),heartRateSamples:samples};
+  return {provider:'garmin',id:raw.id,typeKey:typeof raw.typeKey==='string'?raw.typeKey.slice(0,80):null,title:typeof raw.title==='string'?raw.title.slice(0,160):'Тренировка Garmin',averageHeartRate:finite(raw.averageHeartRate,20,260),maximumHeartRate:finite(raw.maximumHeartRate,20,260),movingDurationSeconds:finite(raw.movingDurationSeconds,0,604800),elapsedDurationSeconds:finite(raw.elapsedDurationSeconds,0,604800),heartRateSamples:samples,
+  ...Object.fromEntries(Object.entries(garminMetricLimits).map(([key,max])=>[key,finite(raw[key],0,max)])),heartRateZones:garminZones(raw.heartRateZones),metricsVersion:finite(raw.metricsVersion,1,10)??0,metricWarnings:Array.isArray(raw.metricWarnings)?raw.metricWarnings.filter(key=>['activity','details','zones'].includes(key)):[]};
 }
 const running=new Set(['running','trail_running','treadmill_running','track_running','street_running','indoor_running','virtual_run','ultra_run']);
 export function garminWorkout(activity){
   if(!validDay(activity?.day))return null;
   const type=running.has(activity.typeKey)?'run':activity.typeKey==='soccer'?'football':['lap_swimming','open_water_swimming','swimming','pool_swimming'].includes(activity.typeKey)?'swim':'other';
-  const source=garminSource({provider:'garmin',id:activity.activityId,title:activity.title,typeKey:activity.typeKey,...Object.fromEntries(['averageHeartRate','maximumHeartRate','movingDurationSeconds','elapsedDurationSeconds','heartRateSamples'].map(key=>[key,activity[key]]))});if(!source)return null;
+  const source=garminSource({provider:'garmin',id:activity.activityId,title:activity.title,typeKey:activity.typeKey,...Object.fromEntries(['averageHeartRate','maximumHeartRate','movingDurationSeconds','elapsedDurationSeconds','heartRateSamples','heartRateZones','metricsVersion','metricWarnings',...Object.keys(garminMetricLimits)].map(key=>[key,activity[key]]))});if(!source)return null;
   const meters=finite(activity.distanceMeters,0,type==='other'?5000000:500000),seconds=finite(type==='swim'&&activity.movingDurationSeconds>0?activity.movingDurationSeconds:activity.durationSeconds,0,type==='other'?604800:86400);
   const distance=meters>0?meters/1000:null,minutes=seconds>0?seconds/60:null;
   if((distance===null&&minutes===null)||(['football','swim'].includes(type)&&minutes===null))return null;
