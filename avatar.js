@@ -23,16 +23,27 @@ export async function createAvatar(container,initialLevel=1,initialProfile={sex:
   const geometry=new THREE.BufferGeometry(),hairGeometry=new THREE.BufferGeometry(),eyesGeometry=new THREE.BufferGeometry();
   const body=new THREE.Mesh(geometry,skin),hair=new THREE.Mesh(hairGeometry,hairMaterial),eyes=new THREE.Mesh(eyesGeometry,eyeMaterial);character.add(body,hair,eyes);
   hairGeometry.setIndex(meta.hair);
-  let profile=initialProfile,level=initialLevel,shapes,loadedSex,active=false,frame=null,angle=0,drag=null,request=0;
+  let profile={...initialProfile},level=initialLevel,shapes,loadedSex,active=false,frame=null,angle=0,drag=null,request=0;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
   function render(time=0){character.rotation.y=angle;renderer.render(scene,camera);frame=null;}
   function draw(){if(!frame)render();}
-  async function loadSex(){
-    if(loadedSex===profile.sex)return;
-    const current=++request,sex=profile.sex;
-    const response=await fetch(asset(`model/${sex}.bin`));if(!response.ok)throw new Error('Не загрузилась модель');
-    const data=new Float32Array(await response.arrayBuffer());if(current!==request)return;
-    shapes=data;loadedSex=sex;
+  async function loadProfile(value){
+    const current=++request,next={...value},changing=loadedSex!==next.sex;
+    if(changing){canvas.hidden=true;container.dataset.loading='true';}
+    try{
+      let data=shapes;
+      if(changing){
+        const response=await fetch(asset(`model/${next.sex}.bin`));if(!response.ok)throw new Error('Не загрузилась модель');
+        data=new Float32Array(await response.arrayBuffer());
+        if(data.length!==meta.vertices*9)throw new Error('Повреждены данные модели');
+      }
+      // An earlier download must never overwrite a more recent profile choice.
+      if(current!==request)return;
+      profile=next;shapes=data;loadedSex=next.sex;update();canvas.hidden=false;
+      canvas.setAttribute('aria-label',`${profile.sex==='female'?'Женская':'Мужская'} модель. Проведи пальцем влево или вправо, чтобы повернуть.`);
+      delete container.dataset.unavailable;
+    }catch(error){if(current===request){canvas.hidden=true;container.dataset.unavailable='true';}throw error;}
+    finally{if(current===request)delete container.dataset.loading;}
   }
   function update(){
     if(!shapes)return;
@@ -46,7 +57,8 @@ export async function createAvatar(container,initialLevel=1,initialProfile={sex:
     if(skinShader){skinShader.uniforms.humanBottom.value=minimum;skinShader.uniforms.humanHeight.value=height;skinShader.uniforms.isFemale.value=profile.sex==='female'?1:0;}
     else{skin.userData={minimum,height,isFemale:profile.sex==='female'?1:0};}
     const headTop=Math.max(...meta.body.map(index=>positions[index*3+1]));
-    const croppedHair=[];for(let i=0;i<meta.hair.length;i+=3){const ids=meta.hair.slice(i,i+3);if(ids.reduce((sum,id)=>sum+positions[id*3+1],0)/3>headTop-.70)croppedHair.push(...ids);}
+    const hairLength=profile.sex==='female'?3.4:.70;
+    const croppedHair=[];for(let i=0;i<meta.hair.length;i+=3){const ids=meta.hair.slice(i,i+3);if(ids.reduce((sum,id)=>sum+positions[id*3+1],0)/3>headTop-hairLength)croppedHair.push(...ids);}
     hairGeometry.setAttribute('position',new THREE.BufferAttribute(positions.slice(),3));hairGeometry.setIndex(croppedHair);hairGeometry.computeVertexNormals();hairGeometry.computeBoundingSphere();
     const eyePositions=[],uv=[];
     for(const [index,uvIndex] of meta.eyes.pairs){const reference=meta.eyes.references[index];eyePositions.push(...positions.slice(reference*3,reference*3+3));uv.push(...meta.eyes.uv[uvIndex]);}
@@ -63,6 +75,6 @@ export async function createAvatar(container,initialLevel=1,initialProfile={sex:
   canvas.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();angle+=event.key==='ArrowLeft'?-.25:.25;draw();}});
   canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();container.dataset.unavailable='true';});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&frame){cancelAnimationFrame(frame);frame=null;}else if(active)draw();});
-  await loadSex();update();resize();container.dataset.ready='true';
-  return {setLevel(value){if(level!==value){level=value;update();}},async setProfile(value){profile=value;await loadSex();update();},setActive(value){active=value;if(!active&&frame){cancelAnimationFrame(frame);frame=null;}if(value){resize();draw();}}};
+  await loadProfile(initialProfile);resize();container.dataset.ready='true';
+  return {setLevel(value){if(level!==value){level=value;update();}},setProfile:loadProfile,setActive(value){active=value;if(!active&&frame){cancelAnimationFrame(frame);frame=null;}if(value){resize();draw();}}};
 }
