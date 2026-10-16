@@ -1,8 +1,8 @@
-import {setupCoach} from './coach-ui.js?v=0.11.1';
-import {setupFriends} from './friends-ui.js?v=0.11.1';
-import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.11.1';
-import {normalizeProfile} from './profile.js?v=0.11.1';
-import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.11.1';
+import {setupCoach} from './coach-ui.js?v=0.12.0';
+import {setupFriends} from './friends-ui.js?v=0.12.0';
+import {setupGarmin,appendGarminDetails} from './garmin-ui.js?v=0.12.0';
+import {normalizeProfile} from './profile.js?v=0.12.0';
+import { dailyHabits, habitDefinitions, addHabit, archiveHabit, dayHasBonus, tasks, dayKey, normalize, migrate, totalXP, completed, complete, bonusDays, dayBonus, addWorkout, workoutTypes, exercises, muscleGroups, workoutDescription, personalRecords, workoutData, workoutXP, levelProgress, formatXP, addPlan, completePlan, removePlan, planSizes, shiftDay, weekStart, weeklySummary, activeStreak, achievements, awardAchievements, achievementCatalog } from './progress.js?v=0.12.0';
 const $=id=>document.getElementById(id);
 const storageKey='my-character-v2';
 let friends,coach;
@@ -37,7 +37,7 @@ function navigate(panel) {
     if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
   }
   if(panel==='character')ensureAvatar();else avatar?.setActive(false);
-  updateBack();window.scrollTo({top:0,behavior:'instant'});
+  updateBack();coach?.updateVisibility();window.scrollTo({top:0,behavior:'instant'});
 }
 function renderHistory() {
   renderCalendar();
@@ -176,7 +176,7 @@ function renderPlans(){
 async function ensureAvatar(){
   if(avatar){avatar.setLevel(levelProgress(totalXP(state)).level);avatar.setActive(true);return;}
   if(avatarPromise)return;
-  avatarPromise=import('./avatar.js?v=0.11.1').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
+  avatarPromise=import('./avatar.js?v=0.12.0').then(async({createAvatar})=>{avatar=await createAvatar($('avatar-viewport'),levelProgress(totalXP(state)).level,profile||{sex:'male',height:175,weight:78});avatar.setActive(selectedPanel==='character');}).catch(()=>{$('avatar-hint').textContent='3D не загрузилась. Остальные функции доступны.';$('avatar-viewport').dataset.unavailable='true';});
 }
 $('add-plan').addEventListener('click',()=>{$('plan-form').reset();$('plan-error').textContent='';$('plan-dialog').showModal();updateBack();});
 $('close-plan').addEventListener('click',()=>$('plan-dialog').close());$('plan-dialog').addEventListener('close',updateBack);
@@ -262,7 +262,7 @@ function initializeTelegram(){
   if(app.isVersionAtLeast?.('6.1')){app.setHeaderColor('#171b21');app.setBackgroundColor('#171b21');}
   if(app.isVersionAtLeast?.('7.10'))app.setBottomBarColor('#1a1e26');
   function applyInsets(){const top=(app.safeAreaInset?.top||0)+(app.contentSafeAreaInset?.top||0),bottom=Math.max(app.safeAreaInset?.bottom||0,app.contentSafeAreaInset?.bottom||0);document.documentElement.style.setProperty('--safe-top',`${top}px`);document.documentElement.style.setProperty('--safe-bottom',`max(env(safe-area-inset-bottom, 0px), ${bottom}px)`);}
-  applyInsets();app.onEvent?.('safeAreaChanged',applyInsets);app.onEvent?.('contentSafeAreaChanged',applyInsets);app.BackButton?.onClick(()=>{document.querySelector('dialog[open]')?(profile?document.querySelector('dialog[open]').close():null):navigate('today');});updateBack();
+  applyInsets();app.onEvent?.('safeAreaChanged',applyInsets);app.onEvent?.('contentSafeAreaChanged',applyInsets);app.BackButton?.onClick(()=>{document.querySelector('dialog[open]')?(profile?document.querySelector('dialog[open]').close():null):document.body.classList.contains('coach-chat-open')?coach.back():navigate('today');});updateBack();
 }
 document.querySelector('script[src*="telegram-web-app"]').addEventListener('load',initializeTelegram);initializeTelegram();render();if(!profile)editProfile();else persist(state);
 

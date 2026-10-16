@@ -33,7 +33,7 @@ class Transport:
         self.calls.append((path,key,payload))
         if self.failure: raise AccountError(self.failure,429)
         if path=='models': return {'data':[{'id':'unknown'},{'id':'llama-3.3-70b-versatile'}]}
-        return {'choices':[{'message':{'content':'По записям есть бег. Как ты сегодня себя чувствуешь?'}}]}
+        return {'choices':[{'message':{'content':getattr(self,'answer','По записям есть бег. Как ты сегодня себя чувствуешь?')}}]}
 
 
 class CoachTests(unittest.TestCase):
@@ -91,6 +91,7 @@ class CoachTests(unittest.TestCase):
         with self.assertRaises(AccountError):self.message()
         self.assertEqual(len(self.transport.calls),1)
         self.coach.settings(self.user,{'goal':{'text':'Полумарафон'},'consent':True})
+        self.transport.answer='Разбор с пояснением. '*90+'В конце — следующий шаг.'
         diary={**EMPTY,'events':[workout('recent-local',distance=5,minutes=29)]}
         first=self.message(state=diary,workoutId='recent-local');count=len(self.transport.calls)
         payload=self.transport.calls[-1][2];context=json.loads(payload['messages'][1]['content'].split('\n',1)[1])
@@ -102,7 +103,8 @@ class CoachTests(unittest.TestCase):
         with self.store.connect() as db:db.execute('UPDATE coach_calls SET created=?',(time.time()-10,))
         second=self.message(id='fixture-followup-12345',text='А завтра?')
         roles=[m['role'] for m in self.transport.calls[-1][2]['messages']]
-        self.assertEqual(roles,['system','system','user','assistant','user']);self.assertEqual(len(second['messages']),2)
+        self.assertEqual(roles,['system','user','user','assistant','user']);self.assertEqual(len(second['messages']),2)
+        self.assertEqual(self.transport.calls[-1][2]['messages'][-2]['content'],self.transport.answer)
         self.assertEqual(self.coach.snapshot(self.other)['messages'],[])
         self.coach.clear(self.user);self.assertEqual(self.coach.snapshot(self.user)['messages'],[])
         self.assertEqual(self.coach.snapshot(self.user)['goal']['text'],'Полумарафон')
