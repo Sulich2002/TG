@@ -1,5 +1,5 @@
-import {garminURL} from './garmin.js?v=0.13.0';
-import {normalize,awardAchievements,formatXP,mergeHabits} from './progress.js?v=0.13.0';
+import {garminURL} from './garmin.js?v=0.13.1';
+import {normalize,awardAchievements,formatXP,mergeHabits} from './progress.js?v=0.13.1';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const accountKey='my-character-account-v1',backupKey='my-character-before-account-v1',serverKey='my-character-server-v1';
@@ -23,6 +23,7 @@ export function accountServerLink(href,url){const link=new URL(href);link.hash=n
 export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  const entry=accountLinkData(location.href);
  let settings=null,period='week',busy=false,ready=false,updatedProgress=false,conflict=false,version=0,boardGeneration=0,timer,pendingInvite=entry?.invite?entry:null;
+ let inviteRequest=null,inviteGeneration=0;
  try{const saved=JSON.parse(localStorage.getItem(accountKey));if(saved&&/^[A-Za-z0-9_-]{20,128}$/.test(saved.token)&&typeof saved.id==='string'&&Number.isSafeInteger(saved.revision)){settings={...saved,url:garminURL(saved.url)};}}catch{}
  const initialGarmin=()=>{try{return JSON.parse(localStorage.getItem('my-character-garmin-v1'));}catch{return null;}};
  function serverAddress(){try{return garminURL(entry?.url||settings?.url||initialGarmin()?.url||localStorage.getItem(serverKey));}catch{return '';}}
@@ -37,6 +38,7 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  function render(){
   $('friends-start').hidden=Boolean(settings);$('friends-account').hidden=!settings;$('friends-board').hidden=!settings;
   $('friends-conflict').hidden=!conflict;
+  $('home-invite').hidden=!settings?.owner;
   $('welcome-login').disabled=Boolean(settings)&&busy&&!getProfile();
   $('welcome-login').textContent=settings&&!getProfile()?(busy?'Восстанавливаем аккаунт…':'Повторить вход'):'Войти в аккаунт';
   if(settings){$('friends-name').textContent=getProfile()?.name||settings.username;$('friends-login-name').textContent='Логин: '+settings.username;$('friends-invite').hidden=!settings.owner;}
@@ -126,12 +128,43 @@ export function setupFriends({getState,getProfile,onNavigate,onDialog,notify}){
  }
  $('friends-refresh').addEventListener('click',async()=>{if(!ready)await initialize();await flush();await refresh();});
  for(const button of document.querySelectorAll('[data-friends-period]'))button.addEventListener('click',()=>{period=button.dataset.friendsPeriod;render();refresh();});
- $('friends-invite').addEventListener('click',async()=>{
+ async function loadInvite(){
   if(!settings?.owner)return;
-  try{if(!settings.invite){const result=await request(settings.url,'/v2/invite',{token:settings.token,body:{}});settings.invite=result.invite;save();}
-   const link=invitation(settings.url,settings.invite);$('friends-share-link').value=link;$('friends-share-box').hidden=false;
-   try{await navigator.clipboard.writeText(link);notify('Ссылка приглашения скопирована.');}catch{notify('Скопируй ссылку из поля ниже.');}
-  }catch(error){status(error.message);}
+  const ticket=++inviteGeneration,owner=settings;
+  $('friends-invite-content').hidden=true;$('friends-invite-retry').hidden=true;
+  $('friends-invite-status').textContent='Готовлю ссылку…';
+  try{
+   if(!owner.invite){
+    if(!inviteRequest)inviteRequest=request(owner.url,'/v2/invite',{token:owner.token,body:{}}).then(result=>{
+     if(typeof result.invite!=='string'||!/^[A-Za-z0-9_-]{20,128}$/.test(result.invite))throw new Error('Не удалось получить приглашение. Попробуй ещё раз.');
+     if(settings!==owner)throw new Error('Войди в свой аккаунт заново.');
+     owner.invite=result.invite;save();
+    }).finally(()=>{inviteRequest=null;});
+    await inviteRequest;
+   }
+   if(ticket!==inviteGeneration||!$('friends-invite-dialog').open||settings!==owner)return;
+   const link=invitation(owner.url,owner.invite);
+   $('friends-invite-link').value=link;$('friends-share-link').value=link;$('friends-share-box').hidden=false;
+   $('friends-invite-content').hidden=false;$('friends-invite-send').hidden=typeof navigator.share!=='function';
+   $('friends-invite-status').textContent='Ссылка готова. Её можно отправить нескольким друзьям.';
+  }catch(error){if(ticket===inviteGeneration&&$('friends-invite-dialog').open){$('friends-invite-status').textContent=error.message;$('friends-invite-retry').hidden=false;}}
+ }
+ function openInvite(){
+  if(!settings?.owner||$('friends-invite-dialog').open)return;
+  $('friends-invite-dialog').showModal();onDialog();loadInvite();
+ }
+ $('home-invite').addEventListener('click',openInvite);$('friends-invite').addEventListener('click',openInvite);
+ $('close-friends-invite').addEventListener('click',()=>$('friends-invite-dialog').close());
+ $('friends-invite-dialog').addEventListener('close',()=>{inviteGeneration++;onDialog();});
+ $('friends-invite-retry').addEventListener('click',loadInvite);
+ $('friends-invite-link').addEventListener('click',event=>event.currentTarget.select());
+ $('friends-invite-copy').addEventListener('click',async()=>{
+  try{await navigator.clipboard.writeText($('friends-invite-link').value);$('friends-invite-status').textContent='Ссылка скопирована. Вставь её в сообщение другу.';}
+  catch{$('friends-invite-link').focus();$('friends-invite-link').select();$('friends-invite-status').textContent='Ссылка выделена. Нажми на неё и выбери «Скопировать».';}
+ });
+ $('friends-invite-send').addEventListener('click',async()=>{
+  try{await navigator.share({title:'Присоединяйся к моей группе',text:'Привычки, тренировки и рейтинг друзей. Создай своего персонажа!',url:$('friends-invite-link').value});}
+  catch(error){if(error.name!=='AbortError')$('friends-invite-status').textContent='Не получилось отправить. Скопируй ссылку и вставь её в сообщение.';}
  });
  $('friends-logout').addEventListener('click',async()=>{
   if(!settings)return;

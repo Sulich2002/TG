@@ -1,5 +1,5 @@
-import {healthMetrics,healthPeriod,healthSummary,metricValue,formatHealth} from './health-analysis.js?v=0.13.0';
-import {dayKey} from './progress.js?v=0.13.0';
+import {healthMetrics,healthPeriod,healthSummary,metricValue,formatHealth} from './health-analysis.js?v=0.13.1';
+import {dayKey} from './progress.js?v=0.13.1';
 const $=id=>document.getElementById(id);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 const dateLabel=day=>new Intl.DateTimeFormat('ru',{day:'numeric',month:'short'}).format(new Date(day+'T12:00:00'));
