@@ -1,4 +1,4 @@
-import {habitDefinitions,tasks,normalize,dayKey,shiftDay} from './progress.js?v=0.14.1';
+import {habitDefinitions,tasks,normalize,dayKey,shiftDay} from './progress.js?v=0.14.2';
 
 export function habitMonth(day,offset=0){
  const date=new Date(day+'T12:00:00');date.setDate(1);date.setMonth(date.getMonth()+offset);return dayKey(date).slice(0,7);
@@ -23,7 +23,7 @@ export function habitTracker(value,{today=dayKey(),month=habitMonth(today),month
  }
  const start=habitMonth(month+'-01',1-months)+'-01',days=[];
  for(let day=start;day<habitMonth(month+'-01',1)+'-01';day=shiftDay(day,1))days.push(day);
- const rows=[...byId.values()].map(habit=>{
+ const rows=[...byId.values()].filter(habit=>!habit.archived).map(habit=>{
   // updatedAt is the most recent activation/archive, not a reliable creation date.
   // Only the current known active span can justify an unmarked day.
   const changed=timestampDay(habit.updatedAt,today);
@@ -33,7 +33,7 @@ export function habitTracker(value,{today=dayKey(),month=habitMonth(today),month
   let best=0,run=0;
   for(const cell of cells){run=cell.status==='done'?run+1:0;best=Math.max(best,run);}
   return {id:habit.id,title:habit.title,archived:habit.archived,activeFrom,cells,done,missed,best,status};
- }).filter(row=>!row.archived||row.done>0).sort((a,b)=>Number(a.archived)-Number(b.archived));
+ }).filter(row=>row.activeFrom<=days.at(-1)||row.done>0);
  const visibleMonths=Array.from({length:months},(_,i)=>habitMonth(start,i));
  return {month,months,start,end:days.at(-1),days,visibleMonths,rows,done:rows.reduce((sum,row)=>sum+row.done,0),missed:rows.reduce((sum,row)=>sum+row.missed,0),best:Math.max(0,...rows.map(row=>row.best)),activeDays:days.filter(day=>rows.some(row=>row.status(day)==='done')).length};
 }

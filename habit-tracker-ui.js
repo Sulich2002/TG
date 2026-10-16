@@ -1,5 +1,5 @@
-import {habitTracker,habitMonth,habitMonthDays} from './habit-tracker.js?v=0.14.1';
-import {dayKey,shiftDay} from './progress.js?v=0.14.1';
+import {habitTracker,habitMonth,habitMonthDays} from './habit-tracker.js?v=0.14.2';
+import {dayKey,shiftDay} from './progress.js?v=0.14.2';
 const $=id=>document.getElementById(id);
 const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(cls)el.className=cls;return el;};
 const dateLabel=day=>new Intl.DateTimeFormat('ru',{day:'numeric',month:'long'}).format(new Date(day+'T12:00:00'));
@@ -17,7 +17,7 @@ export function setupHabitTracker({getState,onManage,onNavigate,onDialog}){
   $('habit-detail-title').textContent=row.title;
   $('habit-detail-period').textContent=periodText();
   $('habit-detail-done').textContent=row.done;$('habit-detail-missed').textContent=row.missed;$('habit-detail-best').textContent=row.best;
-  $('habit-detail-note').textContent=row.archived?'Привычка удалена. Сохранившиеся выполнения показаны; дни с неизвестной историей не считаются пропусками.':`Дни без отметок учитываются с ${dateLabel(row.activeFrom)}. Более ранние сохранённые выполнения тоже показаны.`;
+  $('habit-detail-note').textContent=`Учёт с ${dateLabel(row.activeFrom)}. Дни до этой даты не считаются пропусками. Более ранние сохранённые выполнения тоже показаны.`;
   const status=$('habit-detail-status');status.replaceChildren();
   if(selected.day){status.className='habit-selected-status is-'+row.status(selected.day);status.append(node('b',dateLabel(selected.day)),node('span',labels[row.status(selected.day)]));}
   else status.className='habit-selected-status';
@@ -39,17 +39,20 @@ export function setupHabitTracker({getState,onManage,onNavigate,onDialog}){
   for(const button of document.querySelectorAll('[data-habit-period]')){const active=Number(button.dataset.habitPeriod)===months;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));}
   $('habit-month-picker').hidden=months===1;
   $('habit-month-picker').replaceChildren(...result.visibleMonths.map(month=>{const button=node('button',new Intl.DateTimeFormat('ru',{month:'short'}).format(new Date(month+'-01T12:00:00')));button.type='button';button.classList.toggle('active',month===shown);button.setAttribute('aria-pressed',String(month===shown));button.addEventListener('click',()=>{shown=month;render();});return button;}));
-  $('habit-tracker-empty').hidden=result.rows.length>0;$('habit-grid-wrap').hidden=!result.rows.length;
-  const table=$('habit-grid'),days=habitMonthDays(shown),head=node('thead'),heading=node('tr'),corner=node('th','Привычка','habit-grid-name');corner.scope='col';heading.append(corner);
+  const days=habitMonthDays(shown),visibleRows=result.rows.filter(row=>row.activeFrom<=days.at(-1)||days.some(day=>row.status(day)==='done'));
+  $('habit-tracker-empty').hidden=visibleRows.length>0;$('habit-grid-wrap').hidden=!visibleRows.length;
+  $('habit-empty-title').textContent=shown<habitMonth(today)?'За этот месяц привычек нет':'Место для новых привычек';
+  $('habit-empty-description').textContent='В таблице остаются только текущие привычки. Новые появляются с даты добавления, без пропусков за предыдущие дни.';
+  const table=$('habit-grid'),head=node('thead'),heading=node('tr'),corner=node('th','Привычка','habit-grid-name');corner.scope='col';heading.append(corner);
   for(const day of days){const th=node('th',null,'habit-grid-date');th.scope='col';th.classList.toggle('is-today',day===today);th.classList.toggle('is-weekend',[0,6].includes(new Date(day+'T12:00:00').getDay()));th.append(node('span',Number(day.slice(8))),node('small',new Intl.DateTimeFormat('ru',{weekday:'short'}).format(new Date(day+'T12:00:00'))));heading.append(th);}
   head.append(heading);const body=node('tbody');
-  for(const row of result.rows){
-   const tr=node('tr'),th=node('th',null,'habit-grid-name');th.scope='row';const name=node('button',null,'habit-grid-title');name.type='button';name.append(node('b',row.title));const count=days.filter(day=>row.status(day)==='done').length;name.append(node('small',`${row.archived?'Архив · ':''}${count} ${plural(count,'отметка','отметки','отметок')}`));name.addEventListener('click',()=>openDetail(row.id));th.append(name);tr.append(th);
+  for(const row of visibleRows){
+   const tr=node('tr'),th=node('th',null,'habit-grid-name');th.scope='row';const name=node('button',null,'habit-grid-title');name.type='button';name.append(node('b',row.title));const count=days.filter(day=>row.status(day)==='done').length;name.append(node('small',`${count} ${plural(count,'отметка','отметки','отметок')}`));name.addEventListener('click',()=>openDetail(row.id));th.append(name);tr.append(th);
    for(const day of days){const status=row.status(day),td=node('td'),button=node('button',marks[status],'habit-grid-cell is-'+status);button.type='button';button.dataset.day=day;button.dataset.habit=row.id;button.setAttribute('aria-label',`${row.title}, ${dateLabel(day)}: ${labels[status]}`);button.classList.toggle('is-today',day===today);button.addEventListener('click',()=>openDetail(row.id,day));td.append(button);tr.append(td);}
    body.append(tr);
   }
   const wrapper=$('habit-grid-wrap'),oldScroll=wrapper.scrollLeft;table.replaceChildren(head,body);table.setAttribute('aria-label',`Календарь привычек: ${monthLabel(shown)}`);
-  const nextSignature=shown+':'+result.rows.map(row=>row.id).join(',');
+  const nextSignature=shown+':'+visibleRows.map(row=>row.id).join(',');
   if(nextSignature!==signature&&!$('panel-habits').hidden){signature=nextSignature;requestAnimationFrame(()=>{const target=table.querySelector('thead .is-today');wrapper.scrollLeft=target?Math.max(0,target.offsetLeft-116-(wrapper.clientWidth-116)/2):0;});}else wrapper.scrollLeft=oldScroll;
   if($('habit-detail-dialog').open)renderDetail();
  }

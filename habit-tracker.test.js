@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {habitTracker,habitMonth,habitMonthDays} from './habit-tracker.js';
-import {normalize,complete,addWorkout,totalXP} from './progress.js';
+import {normalize,complete,addWorkout,addHabit,archiveHabit,totalXP} from './progress.js';
 const today='2026-10-16',stamp=day=>new Date(day+'T12:00:00').getTime();
 test('month windows respect real month lengths, leap years and year boundaries',()=>{
  assert.equal(habitMonthDays('2024-02').length,29);assert.equal(habitMonthDays('2025-02').length,28);
@@ -23,11 +23,11 @@ test('a custom habit is measured only after its known activation, preserving ear
  const state={base:0,plans:[],habits:[habit],events:[{id:'2026-10-10:habit:custom:walk',day:'2026-10-10',kind:'habit',habit}]};
  const row=habitTracker(state,{today}).rows[0];assert.equal(row.done,1);assert.equal(row.missed,2);assert.equal(row.status('2026-10-10'),'done');assert.equal(row.status('2026-10-11'),'unknown');assert.equal(row.status('2026-10-13'),'unknown');assert.equal(row.status(today),'pending');
 });
-test('archived and missing definitions preserve completions without inventing inactive-day misses',()=>{
+test('archived and missing definitions disappear from the calendar without losing saved completions',()=>{
  const habit={id:'custom:walk',title:'Гулять',xp:5};
  const event={id:'2026-10-10:habit:custom:walk',day:'2026-10-10',kind:'habit',habit};
  for(const habits of [[{...habit,archived:true,updatedAt:stamp('2026-10-12')}],[]]){
-  const result=habitTracker({base:0,plans:[],habits,events:[event]},{today});assert.equal(result.rows.length,1);assert.equal(result.rows[0].done,1);assert.equal(result.missed,0);assert.equal(result.rows[0].status('2026-10-11'),'unknown');
+  const state={base:0,plans:[],habits,events:[event]},saved=JSON.stringify(state);const result=habitTracker(state,{today});assert.equal(result.rows.length,0);assert.equal(result.done,0);assert.equal(result.missed,0);assert.equal(JSON.stringify(state),saved);assert.equal(totalXP(state),5);
  }
 });
 test('period aggregation counts daily marks once, excludes workouts and keeps earned XP untouched',()=>{
@@ -40,8 +40,20 @@ test('period aggregation counts daily marks once, excludes workouts and keeps ea
 test('future months and unsupported periods fall back to the current calendar view',()=>{
  const result=habitTracker(null,{today,month:'2027-02',months:8});assert.equal(result.month,'2026-10');assert.equal(result.months,1);
 });
-test('legacy standard completions retain their names after the active definitions disappear',()=>{
+test('removed legacy standards stay in the journal and do not reappear in the active calendar',()=>{
  const saved=complete(normalize(null),'reading','2026-10-12');
  const result=habitTracker({...saved,habits:[]},{today});
- assert.equal(result.rows.length,1);assert.equal(result.rows[0].title,'Почитать');assert.equal(result.rows[0].done,1);assert.equal(result.missed,0);
+ assert.equal(result.rows.length,0);assert.equal(result.missed,0);assert.equal(saved.events[0].task,'reading');assert.equal(totalXP({...saved,habits:[]}),10);
+});
+
+test('adding the same title again starts a separate habit on the new date, across reloads',t=>{
+ let now=stamp('2026-10-10');t.mock.method(Date,'now',()=>now);
+ let state=addHabit(null,{title:'Гулять',xp:5},'old','2026-10-10');state=complete(state,'custom:old','2026-10-10');
+ now=stamp('2026-10-12');state=archiveHabit(state,'custom:old',true,'2026-10-12');assert.equal(totalXP(state),5);
+ now=stamp(today);state=addHabit(state,{title:'Гулять',xp:5},'new',today);
+ state=normalize(JSON.parse(JSON.stringify(state)));
+ const result=habitTracker(state,{today}),row=result.rows.find(row=>row.id==='custom:new');
+ assert.ok(!result.rows.some(row=>row.id==='custom:old'));assert.equal(row.activeFrom,today);assert.equal(row.done,0);assert.equal(row.missed,0);assert.equal(row.status('2026-10-15'),'unknown');assert.equal(row.status(today),'pending');
+ assert.equal(habitTracker(state,{today,month:'2026-09'}).rows.length,0);
+ state=complete(state,'custom:new',today);assert.equal(totalXP(state),10);assert.equal(habitTracker(state,{today}).rows.find(row=>row.id==='custom:new').done,1);
 });

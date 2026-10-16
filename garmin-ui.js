@@ -1,8 +1,8 @@
-import {setupAccountGarmin} from './garmin-account.js?v=0.14.1';
-import {mergeHealthHistory} from './health-analysis.js?v=0.14.1';
-import {setupHealthAnalysis} from './health-analysis-ui.js?v=0.14.1';
-import {garminURL,garminRequest} from './garmin.js?v=0.14.1';
-import {garminCandidates,importGarmin,dayKey,workoutDescription,workoutXP,formatXP} from './progress.js?v=0.14.1';
+import {setupAccountGarmin} from './garmin-account.js?v=0.14.2';
+import {mergeHealthHistory} from './health-analysis.js?v=0.14.2';
+import {setupHealthAnalysis} from './health-analysis-ui.js?v=0.14.2';
+import {garminURL,garminRequest} from './garmin.js?v=0.14.2';
+import {garminCandidates,importGarmin,dayKey,workoutDescription,workoutXP,formatXP} from './progress.js?v=0.14.2';
 const $=id=>document.getElementById(id),storageKey='my-character-garmin-v1';
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!=null)el.textContent=text;if(className)el.className=className;return el;};
 
